@@ -5,6 +5,7 @@ triggers:
   - disk space
   - clean up
   - docker bloat
+  - docker space
   - npm cache
   - what's using space
   - storage
@@ -15,80 +16,154 @@ triggers:
 
 Analyze and reclaim wasted disk space on macOS.
 
-## Quick Start
+## Commands
 
 ```bash
 cd ~/repos-personal/space-hog
 
-# Prioritized recommendations (start here)
-python3 space_hog.py --advise
-
-# Docker deep-dive (VM bloat, volumes by project)
-python3 space_hog.py --docker
-
-# Full scan
-python3 space_hog.py
+python3 space_hog.py --advise   # Prioritized recommendations
+python3 space_hog.py --docker   # Docker deep-dive
+python3 space_hog.py            # Full scan
 ```
 
 ## Cleanup Priority Order
 
-Always clean in this order (safest → riskier):
+### Priority 1: SAFE (no downside)
+```bash
+npm cache clean --force          # NPM cache
+rm -rf ~/Library/Caches/*        # App caches
+rm -rf ~/.cache/*                # CLI tool caches
+xcrun simctl delete unavailable  # iOS Simulators
+rm -rf ~/.Trash/*                # Trash
+```
 
-### Priority 1: SAFE (no downside, do these first)
+### Priority 2: MODERATE (rebuild time)
+```bash
+docker system prune -a           # Unused images (doesn't shrink VM disk!)
+docker volume prune              # Unused volumes (check projects first!)
+```
 
-| Command | What it clears |
-|---------|---------------|
-| `npm cache clean --force` | NPM package cache |
-| `rm -rf ~/Library/Caches/*` | App caches |
-| `rm -rf ~/.cache/*` | CLI tool caches |
-| `xcrun simctl delete unavailable` | Old iOS Simulators |
-| `rm -rf ~/.Trash/*` | Trash |
+---
 
-### Priority 2: MODERATE (requires rebuild)
+# Docker Disk Analysis
 
-| Command | What it clears | Side effect |
-|---------|---------------|-------------|
-| `docker system prune -a` | Unused images | Must re-pull images |
-| `docker volume prune` | Unused volumes | Check projects first! |
+## Understanding Docker.raw
 
-### Priority 3: Docker VM Bloat
+Docker Desktop uses a virtual disk file at:
+```
+~/Library/Containers/com.docker.docker/Data/vms/0/data/Docker.raw
+```
 
-Docker.raw doesn't auto-shrink. To reclaim:
-1. Docker Desktop → Settings → Resources → Reduce "Virtual disk limit"
-2. Or: Factory reset Docker Desktop
-3. Or: Stop Docker, delete `~/Library/Containers/com.docker.docker/Data/vms/0/data/Docker.raw`, restart
+**Critical insight:** This is a **sparse file** with THREE different sizes:
 
-## Docker Volume Safety
+| Metric | What it means |
+|--------|---------------|
+| **Logical size** (`ls -lah`) | Max allocation limit (e.g., 60 GB) |
+| **Actual disk usage** (`du -h`) | Real bytes on your disk (e.g., 28 GB) |
+| **Docker objects** (`docker system df`) | Images + containers + volumes (e.g., 2 GB) |
 
-ALWAYS check what's using volumes before deleting:
+The gap between "actual disk usage" and "Docker objects" is **overhead from deleted images/containers**. Docker removed them inside the VM, but the VM disk file NEVER shrinks automatically.
+
+## Why `docker system prune` Doesn't Free Host Disk Space
+
+When you run `docker system prune -a`:
+1. Docker deletes images/containers inside the VM
+2. The VM's filesystem marks those blocks as free
+3. But the Docker.raw file on macOS **doesn't shrink**
+4. The space is "freed" inside Docker but still allocated on your Mac
+
+This is why you can have 28 GB actual disk usage but only 2 GB of Docker objects.
+
+## How to Actually Reclaim VM Overhead
+
+The ONLY ways to shrink Docker.raw:
+
+**Option A: Reduce disk limit (preferred)**
+1. Docker Desktop → Settings → Resources
+2. Reduce "Virtual disk limit" (e.g., to 16 GB)
+3. Click Apply & Restart
+4. Docker will shrink the file to fit
+
+**Option B: Factory reset**
+1. Docker Desktop → Troubleshoot → Reset to factory defaults
+2. Loses all images, containers, volumes
+3. Recreates a fresh small Docker.raw
+
+**Option C: Manual delete**
+```bash
+# Stop Docker Desktop first!
+rm ~/Library/Containers/com.docker.docker/Data/vms/0/data/Docker.raw
+# Restart Docker Desktop - it recreates at minimal size
+```
+
+## Volume Analysis
+
+Run `python3 space_hog.py --docker` to see volumes grouped by project:
+
+```
+VOLUMES BY PROJECT
+--------------------------------------------------
+whospent                    266.8 MB (5 volumes) (orphaned)
+Sable                        45.0 MB (1 volumes) (orphaned)
+zen-mcp-server               10.7 KB (1 volumes) (orphaned)
+```
+
+**Orphaned** = no running containers using these volumes.
+
+### Cleaning Up Orphaned Project Volumes
 
 ```bash
-# See volumes grouped by project
-python3 space_hog.py --docker
-
-# Remove volumes for a specific orphaned project
+# Remove all volumes for a specific project
 docker volume rm $(docker volume ls -q -f 'label=com.docker.compose.project=PROJECT_NAME')
+
+# Example: clean up old Supabase project
+docker volume rm $(docker volume ls -q -f 'label=com.docker.compose.project=Sable')
+```
+
+### Volume Safety Rules
+
+1. **Always run `--docker` first** to see which projects own which volumes
+2. **Check if containers are running** for that project before deleting
+3. **Database volumes contain data** - deleting loses all DB data for that project
+4. Supabase volumes typically include: `db`, `storage`, `edge_runtime`, `config`
+
+## Interpreting JSON Output
+
+Both `--advise` and `--docker` output structured JSON:
+
+```json
+{
+  "vm_disk_logical_bytes": 64000000000,    // Max allocation (what ls shows)
+  "vm_disk_actual_bytes": 28000000000,     // Real disk usage (what du shows)
+  "vm_disk_objects_bytes": 2000000000,     // Docker images/containers/volumes
+  "vm_disk_overhead_bytes": 26000000000,   // Deleted stuff (actual - objects)
+  "volume_details": [
+    {"name": "supabase_db_whospent", "project": "whospent", "size_bytes": 266000000, "in_use": false}
+  ]
+}
+```
+
+## Decision Tree
+
+```
+Is Docker using lots of space?
+├── Run: python3 space_hog.py --docker
+├── Check "Actual disk usage" vs "Docker objects"
+│   ├── Big gap? → VM overhead from deleted images
+│   │   └── Reduce disk limit in Docker Desktop settings
+│   └── Small gap? → Active images are the issue
+│       └── docker system prune -a
+├── Check volumes by project
+│   ├── Orphaned volumes? → Safe to delete if project unused
+│   └── Active volumes? → Don't delete without user confirmation
 ```
 
 ## Workflow
 
-1. Run `python3 space_hog.py --advise` for prioritized recommendations
-2. Execute SAFE cleanups (user approval for each)
-3. If Docker is large, run `--docker` to see volume breakdown
-4. Check volume projects before deleting any
-5. Log cleanup results to CHANGELOG.md
-
-## Interpreting Output
-
-Both `--advise` and `--docker` output structured JSON at the end. Parse this for:
-- `total_reclaimable_bytes` - Total space that can be freed
-- `safe_reclaimable_bytes` - Space from SAFE operations only
-- `vm_disk_bloat_bytes` - Docker VM overhead
-- `volume_details` - Per-volume project associations
-
-## Safety Rules
-
-1. Never delete Docker volumes without showing user which projects they belong to
-2. Always confirm before running MODERATE or higher risk commands
-3. Document what was cleaned in CHANGELOG.md
-4. If Docker VM bloat is large, explain the manual reclaim options
+1. `python3 space_hog.py --advise` - get prioritized recommendations
+2. Run SAFE cleanups (always safe, no confirmation needed)
+3. If Docker is large, run `--docker` to understand why
+4. Explain the logical/actual/objects breakdown to user
+5. For VM overhead: recommend reducing disk limit in settings
+6. For volumes: show projects, confirm before deleting
+7. Log results to CHANGELOG.md
