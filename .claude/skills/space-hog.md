@@ -74,27 +74,71 @@ When you run `docker system prune -a`:
 
 This is why you can have 28 GB actual disk usage but only 2 GB of Docker objects.
 
+## Disk Limit: Reduce Now vs Increase Later
+
+**CRITICAL: Docker's disk limit is ONE-WAY FRIENDLY**
+
+| Action | Data Loss | Difficulty |
+|--------|-----------|------------|
+| **Increase limit** | None | Instant, trivial |
+| **Decrease limit** | **YES - WIPES EVERYTHING** | Must re-pull all images |
+
+### What Happens When You Reduce the Limit
+
+1. ALL images, containers, and volumes are **deleted**
+2. Docker.raw is recreated at the new smaller size
+3. You must re-pull every image on next use
+4. Running containers will be destroyed
+
+### Recommendation: Leave It Unless Urgent
+
+**Don't reduce the disk limit if:**
+- You have running containers (e.g., Supabase)
+- You don't urgently need the space
+- Re-pulling images would waste time/bandwidth
+
+**Do reduce if:**
+- You urgently need the disk space
+- You're okay re-pulling images (~5-10 min for typical Supabase setup)
+- The VM overhead is massive (>50 GB) and you've already pruned
+
+### Safe Way to Reduce (With Backup)
+
+```bash
+# 1. Save images you want to keep
+docker save -o backup-images.tar $(docker images -q)
+
+# 2. Export important volume data
+docker run --rm -v VOLUME_NAME:/data -v $(pwd):/backup alpine tar cvf /backup/volume-backup.tar /data
+
+# 3. Reduce limit in Docker Desktop → Settings → Resources
+
+# 4. Restore images
+docker load -i backup-images.tar
+```
+
 ## How to Actually Reclaim VM Overhead
 
 The ONLY ways to shrink Docker.raw:
 
-**Option A: Reduce disk limit (preferred)**
+**Option A: Reduce disk limit (destructive)**
 1. Docker Desktop → Settings → Resources
-2. Reduce "Virtual disk limit" (e.g., to 16 GB)
+2. Reduce "Virtual disk limit"
 3. Click Apply & Restart
-4. Docker will shrink the file to fit
+4. **WARNING: Deletes all images/containers/volumes**
 
-**Option B: Factory reset**
+**Option B: Factory reset (destructive)**
 1. Docker Desktop → Troubleshoot → Reset to factory defaults
-2. Loses all images, containers, volumes
-3. Recreates a fresh small Docker.raw
+2. Same effect as Option A
 
-**Option C: Manual delete**
+**Option C: Manual delete (destructive)**
 ```bash
 # Stop Docker Desktop first!
 rm ~/Library/Containers/com.docker.docker/Data/vms/0/data/Docker.raw
-# Restart Docker Desktop - it recreates at minimal size
+# Restart Docker Desktop - recreates at minimal size
 ```
+
+**There is NO way to reclaim VM overhead without data loss.**
 
 ## Volume Analysis
 
@@ -133,10 +177,10 @@ Both `--advise` and `--docker` output structured JSON:
 
 ```json
 {
-  "vm_disk_logical_bytes": 64000000000,    // Max allocation (what ls shows)
-  "vm_disk_actual_bytes": 28000000000,     // Real disk usage (what du shows)
-  "vm_disk_objects_bytes": 2000000000,     // Docker images/containers/volumes
-  "vm_disk_overhead_bytes": 26000000000,   // Deleted stuff (actual - objects)
+  "vm_disk_logical_bytes": 64000000000,
+  "vm_disk_actual_bytes": 28000000000,
+  "vm_disk_objects_bytes": 2000000000,
+  "vm_disk_overhead_bytes": 26000000000,
   "volume_details": [
     {"name": "supabase_db_whospent", "project": "whospent", "size_bytes": 266000000, "in_use": false}
   ]
@@ -149,10 +193,11 @@ Both `--advise` and `--docker` output structured JSON:
 Is Docker using lots of space?
 ├── Run: python3 space_hog.py --docker
 ├── Check "Actual disk usage" vs "Docker objects"
-│   ├── Big gap? → VM overhead from deleted images
-│   │   └── Reduce disk limit in Docker Desktop settings
+│   ├── Big gap (VM overhead)?
+│   │   ├── Need space urgently? → Reduce disk limit (loses data)
+│   │   └── Can wait? → Leave it, increase later if needed
 │   └── Small gap? → Active images are the issue
-│       └── docker system prune -a
+│       └── docker system prune -a (won't free host disk space though)
 ├── Check volumes by project
 │   ├── Orphaned volumes? → Safe to delete if project unused
 │   └── Active volumes? → Don't delete without user confirmation
@@ -164,6 +209,37 @@ Is Docker using lots of space?
 2. Run SAFE cleanups (always safe, no confirmation needed)
 3. If Docker is large, run `--docker` to understand why
 4. Explain the logical/actual/objects breakdown to user
-5. For VM overhead: recommend reducing disk limit in settings
+5. For VM overhead: explain the reduce-vs-wait tradeoff
 6. For volumes: show projects, confirm before deleting
 7. Log results to CHANGELOG.md
+
+---
+
+# Skill Maintenance
+
+**IMPORTANT: This skill must be kept up-to-date.**
+
+After ANY of the following, update this skill file and commit:
+
+1. **Research** - When you research a topic (web search, documentation lookup), add findings to relevant section
+2. **Discovery** - When you discover new behavior through testing (e.g., sparse files, orphaned volumes)
+3. **User feedback** - When user corrects or clarifies something
+4. **Tool changes** - When space_hog.py gets new features or output changes
+
+### How to Update
+
+1. Edit `.claude/skills/space-hog.md` with new knowledge
+2. Commit with descriptive message:
+   ```bash
+   git add .claude/skills/space-hog.md
+   git commit -m "Skill: Add [topic] - [what was learned]"
+   git push
+   ```
+
+### What to Document
+
+- **Behaviors** that aren't obvious (e.g., "prune doesn't shrink VM disk")
+- **Tradeoffs** with pros/cons (e.g., "reduce now vs increase later")
+- **Commands** with exact syntax and warnings
+- **Decision trees** for complex choices
+- **Safety rules** to prevent data loss
