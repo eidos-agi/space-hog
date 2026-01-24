@@ -14,6 +14,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 from typing import Generator
 import subprocess
+import json as json_module
 
 
 @dataclass
@@ -420,6 +421,256 @@ def get_downloads_analysis(min_age_days: int = 30) -> tuple[int, list[FileInfo]]
     return total_size, sorted(old_files, key=lambda x: x.size, reverse=True)
 
 
+def analyze_docker() -> dict:
+    """Analyze Docker disk usage including VM disk bloat."""
+    result = {
+        'installed': False,
+        'running': False,
+        'vm_disk_path': None,
+        'vm_disk_allocated': 0,
+        'vm_disk_used': 0,
+        'vm_disk_bloat': 0,
+        'images': {'count': 0, 'size': 0, 'reclaimable': 0},
+        'containers': {'count': 0, 'size': 0, 'reclaimable': 0},
+        'volumes': {'count': 0, 'size': 0, 'reclaimable': 0},
+        'build_cache': {'size': 0, 'reclaimable': 0},
+        'total_usage': 0,
+        'total_reclaimable': 0,
+    }
+
+    # Check if Docker is installed
+    try:
+        subprocess.run(['docker', '--version'], capture_output=True, check=True)
+        result['installed'] = True
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return result
+
+    # Check VM disk file (Docker Desktop on Mac)
+    vm_disk_path = Path.home() / 'Library/Containers/com.docker.docker/Data/vms/0/data/Docker.raw'
+    if vm_disk_path.exists():
+        result['vm_disk_path'] = str(vm_disk_path)
+        result['vm_disk_allocated'] = vm_disk_path.stat().st_size
+
+    # Check if Docker daemon is running
+    try:
+        subprocess.run(['docker', 'info'], capture_output=True, check=True, timeout=5)
+        result['running'] = True
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError):
+        return result
+
+    # Get Docker disk usage
+    try:
+        df_output = subprocess.run(
+            ['docker', 'system', 'df', '--format', '{{json .}}'],
+            capture_output=True, text=True, check=True, timeout=30
+        )
+        for line in df_output.stdout.strip().split('\n'):
+            if not line:
+                continue
+            try:
+                data = json_module.loads(line)
+                type_name = data.get('Type', '').lower()
+
+                # Parse size strings like "1.592GB", "40.96kB", or "-4.826e+08B"
+                def parse_size(size_str):
+                    if not size_str or size_str == '0B':
+                        return 0
+                    size_str = size_str.strip()
+
+                    # Handle scientific notation like "-4.826e+08B"
+                    if 'e' in size_str.lower():
+                        # Extract the number before 'B'
+                        if size_str.upper().endswith('B'):
+                            try:
+                                return max(0, int(float(size_str[:-1])))
+                            except ValueError:
+                                return 0
+
+                    multipliers = {
+                        'B': 1, 'KB': 1024, 'MB': 1024**2, 'GB': 1024**3, 'TB': 1024**4,
+                        'KIB': 1024, 'MIB': 1024**2, 'GIB': 1024**3, 'TIB': 1024**4,
+                    }
+                    size_upper = size_str.upper()
+                    for unit, mult in sorted(multipliers.items(), key=lambda x: -len(x[0])):
+                        if size_upper.endswith(unit):
+                            try:
+                                num_str = size_str[:-len(unit)]
+                                return max(0, int(float(num_str) * mult))
+                            except ValueError:
+                                return 0
+                    # Try parsing as just a number
+                    try:
+                        return max(0, int(float(size_str)))
+                    except ValueError:
+                        return 0
+
+                size = parse_size(data.get('Size', '0B'))
+                reclaimable_str = data.get('Reclaimable', '0B')
+                # Handle format like "312.7MB (100%)"
+                if '(' in reclaimable_str:
+                    reclaimable_str = reclaimable_str.split('(')[0].strip()
+                reclaimable = parse_size(reclaimable_str)
+
+                if 'image' in type_name:
+                    result['images'] = {
+                        'count': int(data.get('TotalCount', 0)),
+                        'size': size,
+                        'reclaimable': reclaimable,
+                    }
+                elif 'container' in type_name:
+                    result['containers'] = {
+                        'count': int(data.get('TotalCount', 0)),
+                        'size': size,
+                        'reclaimable': reclaimable,
+                    }
+                elif 'volume' in type_name:
+                    result['volumes'] = {
+                        'count': int(data.get('TotalCount', 0)),
+                        'size': size,
+                        'reclaimable': reclaimable,
+                    }
+                elif 'build' in type_name:
+                    result['build_cache'] = {
+                        'size': size,
+                        'reclaimable': reclaimable,
+                    }
+            except json_module.JSONDecodeError:
+                continue
+
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+        pass
+
+    # Calculate totals
+    result['total_usage'] = (
+        result['images']['size'] +
+        result['containers']['size'] +
+        result['volumes']['size'] +
+        result['build_cache']['size']
+    )
+    result['total_reclaimable'] = (
+        result['images']['reclaimable'] +
+        result['containers']['reclaimable'] +
+        result['volumes']['reclaimable'] +
+        result['build_cache']['reclaimable']
+    )
+
+    # Calculate VM disk bloat
+    if result['vm_disk_allocated'] > 0:
+        result['vm_disk_used'] = result['total_usage']
+        result['vm_disk_bloat'] = result['vm_disk_allocated'] - result['total_usage']
+
+    return result
+
+
+def print_docker_analysis():
+    """Print detailed Docker disk analysis."""
+    print_header("DOCKER DISK ANALYSIS")
+
+    docker = analyze_docker()
+
+    if not docker['installed']:
+        print("  Docker is not installed.")
+        return
+
+    if not docker['running']:
+        print("  Docker daemon is not running.")
+        print("  Start Docker Desktop to analyze disk usage.")
+        if docker['vm_disk_allocated'] > 0:
+            print(f"\n  VM disk allocated: {format_size(docker['vm_disk_allocated'])}")
+            print(f"  Path: {docker['vm_disk_path']}")
+        return
+
+    green = '\033[92m'
+    yellow = '\033[93m'
+    red = '\033[91m'
+    bold = '\033[1m'
+    reset = '\033[0m'
+
+    # VM Disk analysis
+    if docker['vm_disk_allocated'] > 0:
+        bloat_pct = (docker['vm_disk_bloat'] / docker['vm_disk_allocated']) * 100 if docker['vm_disk_allocated'] > 0 else 0
+        print(f"  {bold}VM DISK (Docker.raw){reset}")
+        print(f"  {'-'*50}")
+        print(f"  Allocated:    {format_size(docker['vm_disk_allocated'])}")
+        print(f"  Actually used: {format_size(docker['vm_disk_used'])}")
+
+        if bloat_pct > 50:
+            color = red
+        elif bloat_pct > 20:
+            color = yellow
+        else:
+            color = green
+        print(f"  {color}Bloat:          {format_size(docker['vm_disk_bloat'])} ({bloat_pct:.0f}% wasted){reset}")
+        print()
+
+    # Docker objects breakdown
+    print(f"  {bold}DOCKER OBJECTS{reset}")
+    print(f"  {'-'*50}")
+    print(f"  {'Type':<15} {'Count':<8} {'Size':<12} {'Reclaimable':<12}")
+    print(f"  {'-'*50}")
+
+    for obj_type, data in [
+        ('Images', docker['images']),
+        ('Containers', docker['containers']),
+        ('Volumes', docker['volumes']),
+        ('Build Cache', docker['build_cache']),
+    ]:
+        count = data.get('count', '-')
+        size = format_size(data['size'])
+        reclaimable = format_size(data['reclaimable'])
+        print(f"  {obj_type:<15} {str(count):<8} {size:<12} {reclaimable:<12}")
+
+    print(f"  {'-'*50}")
+    print(f"  {'TOTAL':<15} {'':<8} {format_size(docker['total_usage']):<12} {format_size(docker['total_reclaimable']):<12}")
+    print()
+
+    # Recommendations
+    print(f"  {bold}RECOMMENDATIONS{reset}")
+    print(f"  {'-'*50}")
+
+    if docker['total_reclaimable'] > 100 * 1024 * 1024:  # > 100MB
+        print(f"  {green}1. Prune unused objects:{reset}")
+        print(f"     docker system prune -a")
+        print(f"     (Reclaims ~{format_size(docker['total_reclaimable'])})")
+        print()
+
+    if docker['volumes']['reclaimable'] > 50 * 1024 * 1024:  # > 50MB
+        print(f"  {yellow}2. Remove unused volumes (check first!):{reset}")
+        print(f"     docker volume prune")
+        print(f"     (Reclaims ~{format_size(docker['volumes']['reclaimable'])})")
+        print()
+
+    if docker['vm_disk_bloat'] > 10 * 1024 * 1024 * 1024:  # > 10GB bloat
+        print(f"  {red}3. Reclaim VM disk bloat ({format_size(docker['vm_disk_bloat'])}):{reset}")
+        print(f"     Option A: Docker Desktop → Settings → Resources")
+        print(f"               → Reduce 'Virtual disk limit'")
+        print(f"     Option B: Factory reset Docker Desktop")
+        print(f"     Option C: Stop Docker, delete Docker.raw, restart")
+        print()
+
+    # JSON output for AI
+    print()
+    print(f"  {bold}STRUCTURED DATA{reset}")
+    print(f"  {'-'*50}")
+    summary = {
+        'vm_disk_allocated_bytes': docker['vm_disk_allocated'],
+        'vm_disk_allocated_human': format_size(docker['vm_disk_allocated']),
+        'vm_disk_used_bytes': docker['vm_disk_used'],
+        'vm_disk_used_human': format_size(docker['vm_disk_used']),
+        'vm_disk_bloat_bytes': docker['vm_disk_bloat'],
+        'vm_disk_bloat_human': format_size(docker['vm_disk_bloat']),
+        'total_reclaimable_bytes': docker['total_reclaimable'],
+        'total_reclaimable_human': format_size(docker['total_reclaimable']),
+        'objects': {
+            'images': docker['images'],
+            'containers': docker['containers'],
+            'volumes': docker['volumes'],
+            'build_cache': docker['build_cache'],
+        }
+    }
+    print(json_module.dumps(summary, indent=2))
+
+
 def print_header(title: str):
     """Print a section header."""
     print(f"\n{'='*60}")
@@ -743,8 +994,15 @@ Examples:
                         help='Show detailed cleanup guide with safety info')
     parser.add_argument('--advise', '-a', action='store_true',
                         help='AI-powered prioritized cleanup recommendations')
+    parser.add_argument('--docker', action='store_true',
+                        help='Detailed Docker disk analysis (VM bloat, images, volumes)')
 
     args = parser.parse_args()
+
+    if args.docker:
+        print("\nSpace Hog - Docker Analysis")
+        print_docker_analysis()
+        sys.exit(0)
 
     if args.advise:
         print("\nSpace Hog - Advisor")
