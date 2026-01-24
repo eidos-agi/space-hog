@@ -150,8 +150,9 @@ CLEANUP_INFO = {
             'Must re-pull/rebuild images not currently in use',
             'Build cache cleared (slower first builds)',
             'Does NOT delete volumes (data is safe)',
+            'NOTE: VM disk (Docker.raw) does NOT shrink automatically!',
         ],
-        'recommendation': 'Safe for dev machines. Use "docker system prune" (no -a) to keep tagged images.',
+        'recommendation': 'Safe for dev machines. To reclaim VM disk space: Docker Desktop → Settings → Resources → reduce Virtual disk limit, or factory reset.',
     },
     'library_caches': {
         'command': 'rm -rf ~/Library/Caches/*',
