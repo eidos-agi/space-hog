@@ -449,7 +449,20 @@ def analyze_docker() -> dict:
     vm_disk_path = Path.home() / 'Library/Containers/com.docker.docker/Data/vms/0/data/Docker.raw'
     if vm_disk_path.exists():
         result['vm_disk_path'] = str(vm_disk_path)
-        result['vm_disk_allocated'] = vm_disk_path.stat().st_size
+        # Logical size (what ls shows)
+        result['vm_disk_logical'] = vm_disk_path.stat().st_size
+        # Actual disk usage (sparse file - what du shows)
+        try:
+            du_output = subprocess.run(
+                ['du', '-k', str(vm_disk_path)],
+                capture_output=True, text=True, timeout=10
+            )
+            if du_output.returncode == 0:
+                result['vm_disk_allocated'] = int(du_output.stdout.split()[0]) * 1024
+            else:
+                result['vm_disk_allocated'] = result['vm_disk_logical']
+        except (subprocess.TimeoutExpired, ValueError, IndexError):
+            result['vm_disk_allocated'] = result['vm_disk_logical']
 
     # Check if Docker daemon is running
     try:
@@ -647,19 +660,23 @@ def print_docker_analysis():
 
     # VM Disk analysis
     if docker['vm_disk_allocated'] > 0:
-        bloat_pct = (docker['vm_disk_bloat'] / docker['vm_disk_allocated']) * 100 if docker['vm_disk_allocated'] > 0 else 0
+        vm_logical = docker.get('vm_disk_logical', docker['vm_disk_allocated'])
+        vm_actual = docker['vm_disk_allocated']
+        vm_objects = docker['vm_disk_used']
+        vm_overhead = vm_actual - vm_objects if vm_actual > vm_objects else 0
+
         print(f"  {bold}VM DISK (Docker.raw){reset}")
         print(f"  {'-'*50}")
-        print(f"  Allocated:    {format_size(docker['vm_disk_allocated'])}")
-        print(f"  Actually used: {format_size(docker['vm_disk_used'])}")
+        print(f"  Max size (logical):     {format_size(vm_logical)}")
+        print(f"  Actual disk usage:      {format_size(vm_actual)}")
+        print(f"  Docker objects inside:  {format_size(vm_objects)}")
 
-        if bloat_pct > 50:
-            color = red
-        elif bloat_pct > 20:
-            color = yellow
-        else:
-            color = green
-        print(f"  {color}Bloat:          {format_size(docker['vm_disk_bloat'])} ({bloat_pct:.0f}% wasted){reset}")
+        if vm_overhead > 1024 * 1024 * 1024:  # > 1GB overhead
+            overhead_pct = (vm_overhead / vm_actual) * 100 if vm_actual > 0 else 0
+            print(f"  {yellow}VM overhead/deleted:     {format_size(vm_overhead)} ({overhead_pct:.0f}% of disk){reset}")
+            print()
+            print(f"  {yellow}The {format_size(vm_overhead)} gap is from deleted images/containers")
+            print(f"  that were removed inside Docker but the disk file never shrinks.{reset}")
         print()
 
     # Docker objects breakdown
@@ -699,8 +716,9 @@ def print_docker_analysis():
         print(f"     (Reclaims ~{format_size(docker['volumes']['reclaimable'])})")
         print()
 
-    if docker['vm_disk_bloat'] > 10 * 1024 * 1024 * 1024:  # > 10GB bloat
-        print(f"  {red}3. Reclaim VM disk bloat ({format_size(docker['vm_disk_bloat'])}):{reset}")
+    vm_overhead = docker['vm_disk_allocated'] - docker['vm_disk_used']
+    if vm_overhead > 5 * 1024 * 1024 * 1024:  # > 5GB overhead
+        print(f"  {red}3. Reclaim VM overhead ({format_size(vm_overhead)}):{reset}")
         print(f"     Option A: Docker Desktop → Settings → Resources")
         print(f"               → Reduce 'Virtual disk limit'")
         print(f"     Option B: Factory reset Docker Desktop")
@@ -749,13 +767,16 @@ def print_docker_analysis():
     print()
     print(f"  {bold}STRUCTURED DATA{reset}")
     print(f"  {'-'*50}")
+    vm_overhead = docker['vm_disk_allocated'] - docker['vm_disk_used']
     summary = {
-        'vm_disk_allocated_bytes': docker['vm_disk_allocated'],
-        'vm_disk_allocated_human': format_size(docker['vm_disk_allocated']),
-        'vm_disk_used_bytes': docker['vm_disk_used'],
-        'vm_disk_used_human': format_size(docker['vm_disk_used']),
-        'vm_disk_bloat_bytes': docker['vm_disk_bloat'],
-        'vm_disk_bloat_human': format_size(docker['vm_disk_bloat']),
+        'vm_disk_logical_bytes': docker.get('vm_disk_logical', docker['vm_disk_allocated']),
+        'vm_disk_logical_human': format_size(docker.get('vm_disk_logical', docker['vm_disk_allocated'])),
+        'vm_disk_actual_bytes': docker['vm_disk_allocated'],
+        'vm_disk_actual_human': format_size(docker['vm_disk_allocated']),
+        'vm_disk_objects_bytes': docker['vm_disk_used'],
+        'vm_disk_objects_human': format_size(docker['vm_disk_used']),
+        'vm_disk_overhead_bytes': vm_overhead,
+        'vm_disk_overhead_human': format_size(vm_overhead),
         'total_reclaimable_bytes': docker['total_reclaimable'],
         'total_reclaimable_human': format_size(docker['total_reclaimable']),
         'objects': {
