@@ -104,6 +104,98 @@ CACHE_LOCATIONS = [
     ('~/Library/Containers/com.docker.docker', 'Docker Desktop'),
 ]
 
+# Cleanup commands with safety information
+# Format: (command, risk_level, description, side_effects, recommendation)
+CLEANUP_COMMANDS = [
+    {
+        'command': 'rm -rf ~/.Trash/*',
+        'name': 'Empty Trash',
+        'risk': 'SAFE',
+        'description': 'Permanently deletes files already in your Trash.',
+        'side_effects': [
+            'Files cannot be recovered after this',
+        ],
+        'recommendation': 'Safe to run. Review Trash contents first if unsure.',
+    },
+    {
+        'command': 'npm cache clean --force',
+        'name': 'Clear NPM Cache',
+        'risk': 'SAFE',
+        'description': 'Removes cached npm packages. NPM self-heals since v5.',
+        'side_effects': [
+            'Next npm install will re-download packages (slightly slower)',
+            'No impact on installed node_modules',
+        ],
+        'recommendation': 'Safe to run. Try "npm cache verify" first for a gentler approach.',
+    },
+    {
+        'command': 'docker system prune -a',
+        'name': 'Clear Docker',
+        'risk': 'MODERATE',
+        'description': 'Removes stopped containers, unused networks, and ALL unused images.',
+        'side_effects': [
+            'Must re-pull/rebuild images not currently in use',
+            'Build cache cleared (slower first builds)',
+            'Does NOT delete volumes (data is safe)',
+        ],
+        'recommendation': 'Safe for dev machines. Use "docker system prune" (no -a) to keep tagged images.',
+    },
+    {
+        'command': 'rm -rf ~/Library/Caches/*',
+        'name': 'Clear User Caches',
+        'risk': 'SAFE',
+        'description': 'Removes application cache files. macOS regenerates them automatically.',
+        'side_effects': [
+            'Apps may be slower on first launch while rebuilding cache',
+            'May need to re-login to some apps',
+            'Some apps store non-cache data here (rare)',
+        ],
+        'recommendation': 'Generally safe. Consider backing up first if concerned.',
+    },
+    {
+        'command': 'rm -rf ~/.cache/*',
+        'name': 'Clear ~/.cache',
+        'risk': 'SAFE',
+        'description': 'Removes general cache directory used by CLI tools and apps.',
+        'side_effects': [
+            'Tools rebuild caches on next use',
+            'May need to re-authenticate some CLI tools',
+        ],
+        'recommendation': 'Safe to run. Data regenerates automatically.',
+    },
+    {
+        'command': 'xcrun simctl delete unavailable',
+        'name': 'Delete Unavailable iOS Simulators',
+        'risk': 'SAFE',
+        'description': 'Removes simulators incompatible with current Xcode version.',
+        'side_effects': [
+            'Only removes simulators you cannot use anyway',
+        ],
+        'recommendation': 'Safe to run. Also try "xcrun simctl runtime delete unavailable" for runtimes.',
+    },
+    {
+        'command': 'rm -rf ~/Library/Developer/Xcode/DerivedData/*',
+        'name': 'Clear Xcode DerivedData',
+        'risk': 'SAFE',
+        'description': 'Removes Xcode build artifacts and indexes.',
+        'side_effects': [
+            'Next build will be slower (full rebuild)',
+            'Xcode will re-index projects',
+        ],
+        'recommendation': 'Safe to run. Common fix for Xcode build issues.',
+    },
+    {
+        'command': 'yarn cache clean',
+        'name': 'Clear Yarn Cache',
+        'risk': 'SAFE',
+        'description': 'Removes cached yarn packages.',
+        'side_effects': [
+            'Next yarn install will re-download packages',
+        ],
+        'recommendation': 'Safe to run.',
+    },
+]
+
 
 def find_space_hogs(root: Path, min_size_mb: int = 50) -> list[tuple[Path, int, str]]:
     """Find common space-hogging directories."""
@@ -229,6 +321,44 @@ def print_header(title: str):
     print(f"{'='*60}\n")
 
 
+def print_cleanup_guide():
+    """Print detailed cleanup guide with safety information."""
+    print_header("CLEANUP GUIDE")
+    print("  Each command includes risk level and side effects.\n")
+
+    for cmd in CLEANUP_COMMANDS:
+        risk_color = {
+            'SAFE': '\033[92m',      # Green
+            'MODERATE': '\033[93m',  # Yellow
+            'CAUTION': '\033[91m',   # Red
+        }.get(cmd['risk'], '')
+        reset = '\033[0m'
+
+        print(f"  {'-'*56}")
+        print(f"  {cmd['name']}")
+        print(f"  Risk: {risk_color}{cmd['risk']}{reset}")
+        print(f"  Command: {cmd['command']}")
+        print()
+        print(f"  What it does:")
+        print(f"    {cmd['description']}")
+        print()
+        print(f"  Side effects:")
+        for effect in cmd['side_effects']:
+            print(f"    - {effect}")
+        print()
+        print(f"  Recommendation:")
+        print(f"    {cmd['recommendation']}")
+        print()
+
+    print(f"  {'-'*56}")
+    print()
+    print("  RISK LEVELS:")
+    print("    SAFE     - No meaningful downside, data regenerates")
+    print("    MODERATE - Some rebuild time or re-download needed")
+    print("    CAUTION  - Review before running, potential data impact")
+    print()
+
+
 def scan_all(root: Path, args):
     """Run all scans and display results."""
     total_reclaimable = 0
@@ -323,11 +453,7 @@ def scan_all(root: Path, args):
     print_header("SUMMARY")
     print(f"  Potentially reclaimable space: {format_size(total_reclaimable)}")
     print()
-    print("  Quick cleanup commands:")
-    print("    rm -rf ~/.Trash/*                    # Empty trash")
-    print("    rm -rf ~/Library/Caches/*            # Clear user caches")
-    print("    npm cache clean --force              # Clear npm cache")
-    print("    docker system prune -a               # Clear Docker")
+    print("  Run 'space-hog --cleanup-guide' for detailed cleanup instructions.")
     print()
 
 
@@ -356,8 +482,15 @@ Examples:
                         help='Only find large files')
     parser.add_argument('--hogs-only', '-g', action='store_true',
                         help='Only find space hog directories')
+    parser.add_argument('--cleanup-guide', action='store_true',
+                        help='Show detailed cleanup guide with safety info')
 
     args = parser.parse_args()
+
+    if args.cleanup_guide:
+        print("\nSpace Hog - Cleanup Guide")
+        print_cleanup_guide()
+        sys.exit(0)
     root = Path(args.path).expanduser().resolve()
 
     if not root.exists():
