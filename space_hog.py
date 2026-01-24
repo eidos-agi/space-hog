@@ -104,8 +104,113 @@ CACHE_LOCATIONS = [
     ('~/Library/Containers/com.docker.docker', 'Docker Desktop'),
 ]
 
+# Maps cache paths to their cleanup info keys
+CACHE_TO_CLEANUP = {
+    '~/.Trash': 'trash',
+    '~/.npm': 'npm',
+    '~/.yarn/cache': 'yarn',
+    '~/Library/Caches': 'library_caches',
+    '~/.cache': 'dot_cache',
+    '~/Library/Developer/CoreSimulator': 'simulators',
+    '~/Library/Developer/Xcode/DerivedData': 'xcode_derived',
+    '~/Library/Containers/com.docker.docker': 'docker',
+    '~/.docker': 'docker',
+}
+
 # Cleanup commands with safety information
-# Format: (command, risk_level, description, side_effects, recommendation)
+CLEANUP_INFO = {
+    'trash': {
+        'command': 'rm -rf ~/.Trash/*',
+        'name': 'Empty Trash',
+        'risk': 'SAFE',
+        'risk_score': 1,  # Lower = safer, prioritize first
+        'description': 'Permanently deletes files already in your Trash.',
+        'side_effects': ['Files cannot be recovered after this'],
+        'recommendation': 'Safe to run. Review Trash contents first if unsure.',
+    },
+    'npm': {
+        'command': 'npm cache clean --force',
+        'name': 'Clear NPM Cache',
+        'risk': 'SAFE',
+        'risk_score': 1,
+        'description': 'Removes cached npm packages. NPM self-heals since v5.',
+        'side_effects': [
+            'Next npm install will re-download packages (slightly slower)',
+            'No impact on installed node_modules',
+        ],
+        'recommendation': 'Safe to run. Try "npm cache verify" first for a gentler approach.',
+    },
+    'docker': {
+        'command': 'docker system prune -a',
+        'name': 'Clear Docker',
+        'risk': 'MODERATE',
+        'risk_score': 2,
+        'description': 'Removes stopped containers, unused networks, and ALL unused images.',
+        'side_effects': [
+            'Must re-pull/rebuild images not currently in use',
+            'Build cache cleared (slower first builds)',
+            'Does NOT delete volumes (data is safe)',
+        ],
+        'recommendation': 'Safe for dev machines. Use "docker system prune" (no -a) to keep tagged images.',
+    },
+    'library_caches': {
+        'command': 'rm -rf ~/Library/Caches/*',
+        'name': 'Clear User Caches',
+        'risk': 'SAFE',
+        'risk_score': 1,
+        'description': 'Removes application cache files. macOS regenerates them automatically.',
+        'side_effects': [
+            'Apps may be slower on first launch while rebuilding cache',
+            'May need to re-login to some apps',
+            'Some apps store non-cache data here (rare)',
+        ],
+        'recommendation': 'Generally safe. Consider backing up first if concerned.',
+    },
+    'dot_cache': {
+        'command': 'rm -rf ~/.cache/*',
+        'name': 'Clear ~/.cache',
+        'risk': 'SAFE',
+        'risk_score': 1,
+        'description': 'Removes general cache directory used by CLI tools and apps.',
+        'side_effects': [
+            'Tools rebuild caches on next use',
+            'May need to re-authenticate some CLI tools',
+        ],
+        'recommendation': 'Safe to run. Data regenerates automatically.',
+    },
+    'simulators': {
+        'command': 'xcrun simctl delete unavailable',
+        'name': 'Delete Unavailable iOS Simulators',
+        'risk': 'SAFE',
+        'risk_score': 1,
+        'description': 'Removes simulators incompatible with current Xcode version.',
+        'side_effects': ['Only removes simulators you cannot use anyway'],
+        'recommendation': 'Safe to run. Also try "xcrun simctl runtime delete unavailable" for runtimes.',
+    },
+    'xcode_derived': {
+        'command': 'rm -rf ~/Library/Developer/Xcode/DerivedData/*',
+        'name': 'Clear Xcode DerivedData',
+        'risk': 'SAFE',
+        'risk_score': 1,
+        'description': 'Removes Xcode build artifacts and indexes.',
+        'side_effects': [
+            'Next build will be slower (full rebuild)',
+            'Xcode will re-index projects',
+        ],
+        'recommendation': 'Safe to run. Common fix for Xcode build issues.',
+    },
+    'yarn': {
+        'command': 'yarn cache clean',
+        'name': 'Clear Yarn Cache',
+        'risk': 'SAFE',
+        'risk_score': 1,
+        'description': 'Removes cached yarn packages.',
+        'side_effects': ['Next yarn install will re-download packages'],
+        'recommendation': 'Safe to run.',
+    },
+}
+
+# Legacy list format for --cleanup-guide (kept for backwards compatibility)
 CLEANUP_COMMANDS = [
     {
         'command': 'rm -rf ~/.Trash/*',
@@ -321,6 +426,157 @@ def print_header(title: str):
     print(f"{'='*60}\n")
 
 
+def collect_cleanup_opportunities() -> list[dict]:
+    """Collect all cleanup opportunities with sizes and safety info."""
+    opportunities = []
+
+    # Check trash
+    trash_size = get_trash_size()
+    if trash_size > 0:
+        info = CLEANUP_INFO['trash'].copy()
+        info['size'] = trash_size
+        info['size_human'] = format_size(trash_size)
+        info['path'] = str(Path.home() / '.Trash')
+        info['category'] = 'trash'
+        opportunities.append(info)
+
+    # Check all cache locations
+    for location, description in CACHE_LOCATIONS:
+        path = Path(location).expanduser()
+        if path.exists():
+            try:
+                size = get_dir_size(path)
+                if size > 50 * 1024 * 1024:  # Only include if > 50MB
+                    # Find matching cleanup info
+                    cleanup_key = None
+                    for pattern, key in CACHE_TO_CLEANUP.items():
+                        if location == pattern or location.startswith(pattern):
+                            cleanup_key = key
+                            break
+
+                    if cleanup_key and cleanup_key in CLEANUP_INFO:
+                        info = CLEANUP_INFO[cleanup_key].copy()
+                        info['size'] = size
+                        info['size_human'] = format_size(size)
+                        info['path'] = str(path)
+                        info['category'] = description
+                        # Avoid duplicates (e.g., docker appears twice)
+                        if not any(o.get('name') == info['name'] for o in opportunities):
+                            opportunities.append(info)
+                    else:
+                        # Generic cache entry without specific cleanup info
+                        opportunities.append({
+                            'name': description,
+                            'size': size,
+                            'size_human': format_size(size),
+                            'path': str(path),
+                            'category': description,
+                            'risk': 'UNKNOWN',
+                            'risk_score': 3,
+                            'command': f'rm -rf "{path}"/*',
+                            'description': f'Cache directory: {description}',
+                            'side_effects': ['May need to re-login or rebuild caches'],
+                            'recommendation': 'Review contents before deleting.',
+                        })
+            except (PermissionError, OSError):
+                pass
+
+    return opportunities
+
+
+def print_advise():
+    """Print AI-friendly prioritized cleanup advice."""
+    print_header("SPACE HOG ADVISOR")
+    print("  Scanning system for cleanup opportunities...\n")
+
+    opportunities = collect_cleanup_opportunities()
+
+    if not opportunities:
+        print("  No significant cleanup opportunities found.")
+        return
+
+    # Sort by priority: SAFE first (risk_score), then by size descending
+    opportunities.sort(key=lambda x: (x.get('risk_score', 3), -x.get('size', 0)))
+
+    # Calculate totals
+    total_size = sum(o['size'] for o in opportunities)
+    safe_size = sum(o['size'] for o in opportunities if o.get('risk') == 'SAFE')
+
+    print(f"  Total reclaimable: {format_size(total_size)}")
+    print(f"  Safe to reclaim:   {format_size(safe_size)}")
+    print()
+
+    # Group by risk level
+    safe_ops = [o for o in opportunities if o.get('risk') == 'SAFE']
+    moderate_ops = [o for o in opportunities if o.get('risk') == 'MODERATE']
+    other_ops = [o for o in opportunities if o.get('risk') not in ('SAFE', 'MODERATE')]
+
+    green = '\033[92m'
+    yellow = '\033[93m'
+    red = '\033[91m'
+    bold = '\033[1m'
+    reset = '\033[0m'
+
+    if safe_ops:
+        print(f"  {green}{bold}PRIORITY 1: SAFE (no downside){reset}")
+        print(f"  {'-'*54}")
+        for i, op in enumerate(safe_ops, 1):
+            print(f"  {i}. {op['name']} - {bold}{op['size_human']}{reset}")
+            print(f"     {op['description']}")
+            print(f"     Command: {op['command']}")
+            print()
+
+    if moderate_ops:
+        print(f"  {yellow}{bold}PRIORITY 2: MODERATE (minor rebuild time){reset}")
+        print(f"  {'-'*54}")
+        for i, op in enumerate(moderate_ops, len(safe_ops) + 1):
+            print(f"  {i}. {op['name']} - {bold}{op['size_human']}{reset}")
+            print(f"     {op['description']}")
+            print(f"     Side effects: {', '.join(op.get('side_effects', []))}")
+            print(f"     Command: {op['command']}")
+            print()
+
+    if other_ops:
+        print(f"  {red}{bold}PRIORITY 3: REVIEW FIRST{reset}")
+        print(f"  {'-'*54}")
+        for i, op in enumerate(other_ops, len(safe_ops) + len(moderate_ops) + 1):
+            print(f"  {i}. {op['name']} - {bold}{op['size_human']}{reset}")
+            print(f"     Path: {op['path']}")
+            print()
+
+    # Print quick command summary
+    print_header("QUICK ACTIONS")
+
+    if safe_ops:
+        print(f"  {green}Run all SAFE cleanups (reclaim {format_size(safe_size)}):{reset}")
+        print()
+        for op in safe_ops:
+            print(f"  {op['command']}")
+        print()
+
+    # Output structured data for AI consumption
+    print_header("STRUCTURED DATA (for AI processing)")
+    import json
+    summary = {
+        'total_reclaimable_bytes': total_size,
+        'total_reclaimable_human': format_size(total_size),
+        'safe_reclaimable_bytes': safe_size,
+        'safe_reclaimable_human': format_size(safe_size),
+        'opportunities': [
+            {
+                'name': o['name'],
+                'size_bytes': o['size'],
+                'size_human': o['size_human'],
+                'risk': o.get('risk', 'UNKNOWN'),
+                'command': o['command'],
+                'side_effects': o.get('side_effects', []),
+            }
+            for o in opportunities
+        ]
+    }
+    print(json.dumps(summary, indent=2))
+
+
 def print_cleanup_guide():
     """Print detailed cleanup guide with safety information."""
     print_header("CLEANUP GUIDE")
@@ -484,8 +740,15 @@ Examples:
                         help='Only find space hog directories')
     parser.add_argument('--cleanup-guide', action='store_true',
                         help='Show detailed cleanup guide with safety info')
+    parser.add_argument('--advise', '-a', action='store_true',
+                        help='AI-powered prioritized cleanup recommendations')
 
     args = parser.parse_args()
+
+    if args.advise:
+        print("\nSpace Hog - Advisor")
+        print_advise()
+        sys.exit(0)
 
     if args.cleanup_guide:
         print("\nSpace Hog - Cleanup Guide")
