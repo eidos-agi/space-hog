@@ -562,6 +562,65 @@ def analyze_docker() -> dict:
     return result
 
 
+def analyze_docker_volumes() -> list[dict]:
+    """Get detailed volume information including project associations."""
+    volumes = []
+
+    try:
+        # Get verbose docker system df which includes volume details
+        df_output = subprocess.run(
+            ['docker', 'system', 'df', '-v', '--format', '{{json .}}'],
+            capture_output=True, text=True, check=True, timeout=30
+        )
+
+        data = json_module.loads(df_output.stdout)
+        volume_list = data.get('Volumes', [])
+
+        for vol in volume_list:
+            labels = vol.get('Labels', '')
+            # Parse project from labels
+            project = None
+            if 'com.supabase.cli.project=' in labels:
+                for part in labels.split(','):
+                    if 'com.supabase.cli.project=' in part:
+                        project = part.split('=')[1]
+                        break
+            elif 'com.docker.compose.project=' in labels:
+                for part in labels.split(','):
+                    if 'com.docker.compose.project=' in part:
+                        project = part.split('=')[1]
+                        break
+
+            # Parse size
+            size_str = vol.get('Size', '0B')
+            size = 0
+            multipliers = {'B': 1, 'KB': 1024, 'MB': 1024**2, 'GB': 1024**3}
+            for unit, mult in sorted(multipliers.items(), key=lambda x: -len(x[0])):
+                if size_str.upper().endswith(unit):
+                    try:
+                        size = int(float(size_str[:-len(unit)]) * mult)
+                    except ValueError:
+                        pass
+                    break
+
+            links = int(vol.get('Links', 0))
+
+            volumes.append({
+                'name': vol.get('Name', ''),
+                'project': project,
+                'size': size,
+                'size_human': format_size(size),
+                'links': links,
+                'in_use': links > 0,
+                'driver': vol.get('Driver', 'local'),
+            })
+
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, json_module.JSONDecodeError):
+        pass
+
+    return sorted(volumes, key=lambda x: -x['size'])
+
+
 def print_docker_analysis():
     """Print detailed Docker disk analysis."""
     print_header("DOCKER DISK ANALYSIS")
@@ -648,6 +707,44 @@ def print_docker_analysis():
         print(f"     Option C: Stop Docker, delete Docker.raw, restart")
         print()
 
+    # Volume details
+    volumes = analyze_docker_volumes()
+    if volumes:
+        print(f"  {bold}VOLUMES BY PROJECT{reset}")
+        print(f"  {'-'*50}")
+
+        # Group by project
+        projects = {}
+        orphaned = []
+        for vol in volumes:
+            proj = vol.get('project') or 'unknown'
+            if vol['links'] == 0 and proj not in ('unknown',):
+                orphaned.append(vol)
+            if proj not in projects:
+                projects[proj] = {'volumes': [], 'total_size': 0}
+            projects[proj]['volumes'].append(vol)
+            projects[proj]['total_size'] += vol['size']
+
+        # Sort projects by size
+        for proj, data in sorted(projects.items(), key=lambda x: -x[1]['total_size']):
+            in_use_marker = ''
+            vol_count = len(data['volumes'])
+            orphan_count = sum(1 for v in data['volumes'] if v['links'] == 0)
+            if orphan_count == vol_count:
+                in_use_marker = f' {yellow}(orphaned){reset}'
+            elif orphan_count > 0:
+                in_use_marker = f' {yellow}({orphan_count} orphaned){reset}'
+
+            print(f"  {proj:<25} {format_size(data['total_size']):>10} ({vol_count} volumes){in_use_marker}")
+
+        print()
+        if orphaned:
+            orphan_size = sum(v['size'] for v in orphaned)
+            print(f"  {yellow}Orphaned volumes (no running containers): {format_size(orphan_size)}{reset}")
+            print(f"  To remove orphaned volumes for a project:")
+            print(f"    docker volume rm $(docker volume ls -q -f 'label=com.docker.compose.project=PROJECT_NAME')")
+            print()
+
     # JSON output for AI
     print()
     print(f"  {bold}STRUCTURED DATA{reset}")
@@ -666,7 +763,17 @@ def print_docker_analysis():
             'containers': docker['containers'],
             'volumes': docker['volumes'],
             'build_cache': docker['build_cache'],
-        }
+        },
+        'volume_details': [
+            {
+                'name': v['name'],
+                'project': v['project'],
+                'size_bytes': v['size'],
+                'size_human': v['size_human'],
+                'in_use': v['in_use'],
+            }
+            for v in volumes
+        ] if volumes else [],
     }
     print(json_module.dumps(summary, indent=2))
 
