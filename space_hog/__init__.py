@@ -14,9 +14,14 @@ from .smart import (
     find_time_machine_snapshots,
     get_smart_recommendations,
 )
+from .safe_delete import (
+    move_to_trash,
+    trash_contents,
+    safe_cleanup,
+)
 from .cli import main
 
-__version__ = '0.3.0'
+__version__ = '0.4.0'
 __all__ = [
     'format_size',
     'get_dir_size',
@@ -41,5 +46,8 @@ __all__ = [
     'find_localization_files',
     'find_time_machine_snapshots',
     'get_smart_recommendations',
+    'move_to_trash',
+    'trash_contents',
+    'safe_cleanup',
     'main',
 ]

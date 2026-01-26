@@ -93,6 +93,11 @@ def collect_cleanup_opportunities() -> list[dict]:
 def print_advise():
     """Print AI-friendly prioritized cleanup advice."""
     print_header("SPACE HOG ADVISOR")
+    print()
+    print(f"  {Colors.YELLOW}{Colors.BOLD}⚠️  WARNING: Review all commands before running.{Colors.RESET}")
+    print(f"  {Colors.YELLOW}Space Hog is not responsible for data loss.{Colors.RESET}")
+    print(f"  {Colors.YELLOW}Consider using --dry-run first to preview changes.{Colors.RESET}")
+    print()
     print("  Scanning system for cleanup opportunities...\n")
 
     opportunities = collect_cleanup_opportunities()

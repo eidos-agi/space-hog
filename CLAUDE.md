@@ -49,14 +49,31 @@ Then wait for explicit "yes" or approval.
 
 ## Running Cleanups
 
-Use the exact commands from the output. They handle path escaping correctly.
+**RECOMMENDED: Use safe_cleanup() which moves to Trash instead of permanent deletion:**
 
-For verified cleanup tracking, use the Python API:
+```python
+from space_hog import safe_cleanup
+
+# Dry run first - shows what would happen without deleting
+result = safe_cleanup("rm -rf ~/.npm/_npx/*", "NPM npx cache", dry_run=True)
+print(result)  # {'message': '[DRY RUN] Would move to Trash: ...', 'bytes_freed': ...}
+
+# Then actually run it (moves to Trash, recoverable!)
+result = safe_cleanup("rm -rf ~/.npm/_npx/*", "NPM npx cache", dry_run=False)
+# Returns: {'success': True, 'bytes_freed': 3200000000, 'recoverable': True}
+```
+
+**For non-recoverable commands** (docker prune, npm cache clean), use run_cleanup:
 ```python
 from space_hog import run_cleanup
-result = run_cleanup("rm -rf ~/.npm/_npx/*", "NPM npx cache", "npm")
-# Returns: {'success': True, 'bytes_freed': 3200000000, 'recorded': True}
+result = run_cleanup("docker system prune -a", "Docker cleanup", "docker")
 ```
+
+**Key safety features:**
+- `safe_cleanup()` converts `rm -rf` to Trash operations (recoverable)
+- `--dry-run` flag previews what would be deleted
+- Files go to ~/.Trash with timestamps to avoid conflicts
+- User can recover deleted files from Trash if needed
 
 ## Common Commands
 

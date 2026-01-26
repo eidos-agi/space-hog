@@ -100,6 +100,7 @@ Examples:
   space-hog --caches-only       # Only check cache locations
   space-hog --advise            # Prioritized cleanup recommendations
   space-hog --smart             # Smart analysis (DMGs, old downloads, etc.)
+  space-hog --dry-run           # Preview deletions without executing
   space-hog --docker            # Docker deep-dive (VM bloat, volumes)
   space-hog --apps              # Find unused/AI-replaceable apps
   space-hog --stats             # Show cleanup history and savings
@@ -143,6 +144,8 @@ Currently scans:
                         help='Days threshold for unused apps (default: 90)')
     parser.add_argument('--smart', '-s', action='store_true',
                         help='Smart analysis (DMGs, old downloads, localization, snapshots)')
+    parser.add_argument('--dry-run', action='store_true',
+                        help='Preview what would be deleted without actually deleting')
 
     args = parser.parse_args()
 
