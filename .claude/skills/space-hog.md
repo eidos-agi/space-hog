@@ -140,6 +140,8 @@ rm ~/Library/Containers/com.docker.docker/Data/vms/0/data/Docker.raw
 
 **There is NO way to reclaim VM overhead without data loss.**
 
+**Important:** Deleting volumes/images INCREASES VM overhead - the deleted blocks become dead space in Docker.raw, not freed space on macOS.
+
 ## Volume Analysis
 
 Run `python3 space_hog.py --docker` to see volumes grouped by project:
@@ -164,12 +166,34 @@ docker volume rm $(docker volume ls -q -f 'label=com.docker.compose.project=PROJ
 docker volume rm $(docker volume ls -q -f 'label=com.docker.compose.project=Sable')
 ```
 
+### Tracing Volumes to Source Projects
+
+To find what created a volume:
+
+```bash
+# 1. Inspect volume labels
+docker volume inspect VOLUME_NAME | jq '.[].Labels'
+
+# 2. Search for project_id in supabase configs
+grep -r "project_id.*PROJECT_NAME" ~/repos* --include="config.toml"
+
+# 3. For Supabase cloud IDs (random strings like hrezmztjmvzzibfhvpyo)
+grep -l "RANDOM_ID" ~/repos*/*/.env*
+```
+
+Common volume name patterns:
+- `supabase_db_PROJECT` → Local Supabase database (contains data!)
+- `supabase_edge_runtime_PROJECT` → Edge function cache (safe to delete)
+- `supabase_config_PROJECT` → Config cache (safe to delete)
+- `PROJECT_zen-mcp-config` → Docker Compose volume
+
 ### Volume Safety Rules
 
 1. **Always run `--docker` first** to see which projects own which volumes
 2. **Check if containers are running** for that project before deleting
 3. **Database volumes contain data** - deleting loses all DB data for that project
 4. Supabase volumes typically include: `db`, `storage`, `edge_runtime`, `config`
+5. **Trace volumes to source** before deleting to confirm project is unused
 
 ## Interpreting JSON Output
 
