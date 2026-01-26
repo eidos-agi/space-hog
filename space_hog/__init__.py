@@ -17,11 +17,24 @@ from .smart import (
 from .safe_delete import (
     move_to_trash,
     trash_contents,
+    trash_app,
     safe_cleanup,
+)
+from .preferences import (
+    add_essential_app,
+    add_blacklist_app,
+    is_essential,
+    is_blacklisted,
+    load_preferences,
+)
+from .memory import (
+    get_top_ram_consumers,
+    get_login_items,
+    get_launch_agents,
 )
 from .cli import main
 
-__version__ = '0.4.0'
+__version__ = '0.5.0'
 __all__ = [
     'format_size',
     'get_dir_size',
@@ -48,6 +61,15 @@ __all__ = [
     'get_smart_recommendations',
     'move_to_trash',
     'trash_contents',
+    'trash_app',
     'safe_cleanup',
+    'add_essential_app',
+    'add_blacklist_app',
+    'is_essential',
+    'is_blacklisted',
+    'load_preferences',
+    'get_top_ram_consumers',
+    'get_login_items',
+    'get_launch_agents',
     'main',
 ]

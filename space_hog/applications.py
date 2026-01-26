@@ -201,11 +201,18 @@ def print_applications_analysis(min_days_unused: int = 90):
 
     # Unused apps
     if results['unused_apps']:
+        from .preferences import is_essential, is_blacklisted
         print(f"  {c.YELLOW}{c.BOLD}UNUSED APPS (not opened in {min_days_unused}+ days){c.RESET}")
         print(f"  {'-'*50}")
         for app in results['unused_apps'][:10]:
             days = app['days_since_used']
-            print(f"  {app['size_human']:>10}  {app['name']}")
+            markers = []
+            if is_essential(app['name']):
+                markers.append(f"{c.GREEN}essential{c.RESET}")
+            if is_blacklisted(app['name']):
+                markers.append(f"{c.RED}blacklisted{c.RESET}")
+            marker_str = f" ({', '.join(markers)})" if markers else ""
+            print(f"  {app['size_human']:>10}  {app['name']}{marker_str}")
             print(f"             Last used: {app['last_used_str']} ({days} days ago)")
         if len(results['unused_apps']) > 10:
             print(f"  ... and {len(results['unused_apps']) - 10} more unused apps")
