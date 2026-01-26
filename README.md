@@ -139,3 +139,35 @@ space_hog/
 ## License
 
 MIT
+
+## Fork Workflow
+
+This repo is a fork of [rhea-impact/space-hog](https://github.com/rhea-impact/space-hog).
+
+**Remotes:**
+```
+origin   → dshanklin-bv/space-hog (this fork)
+upstream → rhea-impact/space-hog (public source)
+```
+
+**Sync from upstream:**
+```bash
+git fetch upstream
+git merge upstream/main
+git push origin main
+```
+
+**Push fixes to upstream:**
+```bash
+# Create a branch for your fix
+git checkout -b fix/my-fix
+
+# Make changes, commit
+git add -A && git commit -m "Fix: description"
+
+# Push to your fork
+git push origin fix/my-fix
+
+# Create PR on GitHub: dshanklin-bv/space-hog → rhea-impact/space-hog
+gh pr create --repo rhea-impact/space-hog --head dshanklin-bv:fix/my-fix
+```
