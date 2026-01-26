@@ -21,7 +21,7 @@ Analyze and reclaim wasted disk space on macOS.
 ## Commands
 
 ```bash
-cd ~/repos-personal/space-hog
+cd ~/repos-rheaimpact/space-hog
 
 python3 space_hog.py --advise   # Prioritized cleanup recommendations
 python3 space_hog.py --docker   # Docker deep-dive (VM bloat, volumes)
