@@ -16,6 +16,38 @@ Why? Disk cleanup is tedious for humans but trivial for AI:
 
 Just ask your AI assistant to "clean up my disk" and let it handle the rest.
 
+## AI Agent Workflow
+
+**If you're an AI agent, follow this workflow:**
+
+```bash
+# 1. First, understand what's available
+space-hog --help
+
+# 2. Get prioritized recommendations with safety ratings
+space-hog --advise
+
+# 3. Run SAFE cleanup commands (risk_score: 1) without asking user
+#    The output includes ready-to-run commands
+
+# 4. For MODERATE risk (risk_score: 2), ask user first
+
+# 5. For CAUTION/UNKNOWN risk (risk_score: 3), explain and get explicit approval
+
+# 6. Track your progress
+space-hog --stats
+```
+
+**Key flags for AI agents:**
+- `--advise` — Returns JSON with `risk_score` (1=safe, 2=moderate, 3=caution)
+- `--stats` — Shows cumulative space saved across sessions
+- `--smart` — Finds DMGs, old downloads, Time Machine snapshots
+
+**Safety rules:**
+- Commands with `risk: SAFE` can be run automatically
+- Always use the exact command from the output (handles escaping)
+- The `run_cleanup()` function measures before/after to verify actual savings
+
 ## Features
 
 - **Prioritized Cleanup Advice** - AI-friendly recommendations sorted by safety
