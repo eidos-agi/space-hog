@@ -1104,6 +1104,24 @@ Examples:
   space-hog --min-size 50       # Only show items > 50MB
   space-hog --duplicates        # Include duplicate file scan
   space-hog --caches-only       # Only check cache locations
+  space-hog --advise            # Prioritized cleanup recommendations
+  space-hog --docker            # Docker deep-dive (VM bloat, volumes)
+
+Currently scans:
+  - Trash, Downloads (old files)
+  - Caches: npm, yarn, pip, Library/Caches, ~/.cache
+  - Docker: images, containers, volumes, VM disk bloat
+  - Dev dirs: node_modules, .git, venv, DerivedData, Pods
+  - Large files, duplicates
+
+Planned features (see TODO.md):
+  - Xcode: DerivedData, archives, device support
+  - Homebrew: old versions, cache
+  - JetBrains IDEs: caches, logs
+  - Time Machine local snapshots
+  - Slack, Spotify, Zoom caches
+  - Unused apps detection
+  - Interactive cleanup wizard
         """
     )
     parser.add_argument('path', nargs='?', default=str(Path.home()),
