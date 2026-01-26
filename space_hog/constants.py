@@ -26,6 +26,7 @@ CACHE_LOCATIONS = [
     # System caches
     ('~/Library/Caches', 'Application caches'),
     ('~/.cache', 'General cache'),
+    ('~/Library/Logs', 'User log files'),
 
     # AI tools (often huge!)
     ('~/.ollama', 'Ollama models'),
@@ -40,6 +41,8 @@ CACHE_LOCATIONS = [
     ('~/Library/Application Support/Slack/Cache', 'Slack cache'),
     ('~/Library/Application Support/discord/Cache', 'Discord cache'),
     ('~/Library/Application Support/Google/Chrome/Default/Cache', 'Chrome cache'),
+    ('~/Library/Application Support/Firefox/Profiles', 'Firefox profiles/cache'),
+    ('~/Library/Application Support/BraveSoftware/Brave-Browser/Default/Cache', 'Brave cache'),
 
     # Xcode
     ('~/Library/Developer/Xcode/DerivedData', 'Xcode derived data'),
@@ -50,16 +53,32 @@ CACHE_LOCATIONS = [
     # Package managers
     ('~/.npm', 'NPM cache'),
     ('~/.yarn/cache', 'Yarn cache'),
+    ('~/.pnpm-store', 'pnpm store'),
+    ('~/.bun/install/cache', 'Bun package cache'),
     ('~/.pyenv', 'Python versions (pyenv)'),
     ('~/.local', 'pip/local installs'),
     ('~/.cargo', 'Rust packages'),
     ('~/.rustup', 'Rust toolchain'),
+    ('~/.gradle', 'Gradle cache'),
+    ('~/.m2', 'Maven repository'),
+    ('~/.cocoapods', 'CocoaPods cache'),
+
+    # iOS/Mobile backups (often HUGE)
+    ('~/Library/Application Support/MobileSync/Backup', 'iOS device backups'),
+
+    # Mail
+    ('~/Library/Mail', 'Mail data and attachments'),
+    ('~/Library/Containers/com.apple.mail/Data/Library/Mail Downloads', 'Mail downloads'),
+
+    # Photos
+    ('~/Library/Containers/com.apple.Photos/Data/Library', 'Photos library cache'),
 
     # Other dev
     ('~/.mozbuild', 'Mozilla build cache'),
     ('~/.docker', 'Docker data'),
     ('~/Library/Containers/com.docker.docker', 'Docker Desktop'),
     ('~/Library/Containers/com.microsoft.teams2', 'Microsoft Teams'),
+    ('~/Library/Group Containers/group.com.apple.notes', 'Apple Notes data'),
 ]
 
 # Maps cache paths to their cleanup info keys
@@ -67,8 +86,11 @@ CACHE_TO_CLEANUP = {
     '~/.Trash': 'trash',
     '~/.npm': 'npm',
     '~/.yarn/cache': 'yarn',
+    '~/.pnpm-store': 'pnpm',
+    '~/.bun/install/cache': 'bun',
     '~/Library/Caches': 'library_caches',
     '~/.cache': 'dot_cache',
+    '~/Library/Logs': 'user_logs',
     '~/Library/Developer/CoreSimulator': 'simulators',
     '~/Library/Developer/Xcode/DerivedData': 'xcode_derived',
     '~/Library/Developer/Xcode/iOS DeviceSupport': 'xcode_device_support',
@@ -77,6 +99,11 @@ CACHE_TO_CLEANUP = {
     '~/.ollama': 'ollama',
     '~/.cargo': 'cargo',
     '~/.pyenv': 'pyenv',
+    '~/.gradle': 'gradle',
+    '~/.m2': 'maven',
+    '~/.cocoapods': 'cocoapods',
+    '~/Library/Application Support/MobileSync/Backup': 'ios_backups',
+    '~/Library/Mail': 'mail',
 }
 
 # Cleanup commands with safety information
@@ -215,5 +242,83 @@ CLEANUP_INFO = {
             'Projects using removed versions will break',
         ],
         'recommendation': 'Run "pyenv versions" to see installed. Remove old versions you don\'t use.',
+    },
+    'pnpm': {
+        'command': 'pnpm store prune',
+        'name': 'pnpm Store',
+        'risk': 'SAFE',
+        'risk_score': 1,
+        'description': 'pnpm global content-addressable store.',
+        'side_effects': ['Removes packages not referenced by any project'],
+        'recommendation': 'Safe to run. pnpm re-downloads packages on next install.',
+    },
+    'bun': {
+        'command': 'rm -rf ~/.bun/install/cache/*',
+        'name': 'Bun Package Cache',
+        'risk': 'SAFE',
+        'risk_score': 1,
+        'description': 'Cached packages downloaded by Bun.',
+        'side_effects': ['Next bun install will re-download packages'],
+        'recommendation': 'Safe to run.',
+    },
+    'user_logs': {
+        'command': 'rm -rf ~/Library/Logs/*',
+        'name': 'User Log Files',
+        'risk': 'SAFE',
+        'risk_score': 1,
+        'description': 'Application log files. Usually not needed after debugging.',
+        'side_effects': ['Lose historical logs for debugging'],
+        'recommendation': 'Safe to clear. Apps recreate logs as needed.',
+    },
+    'gradle': {
+        'command': 'rm -rf ~/.gradle/caches/*',
+        'name': 'Gradle Cache',
+        'risk': 'SAFE',
+        'risk_score': 1,
+        'description': 'Cached Gradle builds and downloaded dependencies.',
+        'side_effects': ['Next build will re-download dependencies'],
+        'recommendation': 'Safe to run. Consider keeping ~/.gradle/wrapper.',
+    },
+    'maven': {
+        'command': 'rm -rf ~/.m2/repository/*',
+        'name': 'Maven Repository',
+        'risk': 'SAFE',
+        'risk_score': 1,
+        'description': 'Local Maven repository with downloaded artifacts.',
+        'side_effects': ['Next build will re-download dependencies'],
+        'recommendation': 'Safe to run.',
+    },
+    'cocoapods': {
+        'command': 'pod cache clean --all',
+        'name': 'CocoaPods Cache',
+        'risk': 'SAFE',
+        'risk_score': 1,
+        'description': 'Cached CocoaPods specifications and downloads.',
+        'side_effects': ['Next pod install will re-download pods'],
+        'recommendation': 'Safe to run.',
+    },
+    'ios_backups': {
+        'command': 'ls -la ~/Library/Application\\ Support/MobileSync/Backup/  # Delete via Finder > iPhone > Manage Backups',
+        'name': 'iOS Device Backups',
+        'risk': 'CAUTION',
+        'risk_score': 3,
+        'description': 'Full backups of iPhones/iPads. Can be 20-100+ GB each.',
+        'side_effects': [
+            'CANNOT recover device from deleted backup',
+            'May lose photos, messages, app data not in iCloud',
+        ],
+        'recommendation': 'Review in Finder > iPhone > Manage Backups. Delete old device backups you no longer need.',
+    },
+    'mail': {
+        'command': 'ls -la ~/Library/Mail/  # Clean via Mail.app > Mailbox > Erase Deleted Items',
+        'name': 'Mail Data',
+        'risk': 'CAUTION',
+        'risk_score': 3,
+        'description': 'Local email data including attachments. Can be very large.',
+        'side_effects': [
+            'Mail.app manages this - manual deletion may corrupt database',
+            'Attachments re-download from server (if IMAP)',
+        ],
+        'recommendation': 'Use Mail.app > Mailbox > Erase Deleted Items. Or rebuild mailbox.',
     },
 }

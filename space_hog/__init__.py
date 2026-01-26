@@ -7,9 +7,16 @@ from .docker import analyze_docker, analyze_docker_volumes
 from .applications import scan_applications, get_app_info
 from .advisor import collect_cleanup_opportunities
 from .stats import record_cleanup, run_cleanup, get_summary, print_stats
+from .smart import (
+    find_dmg_files,
+    find_old_downloads,
+    find_localization_files,
+    find_time_machine_snapshots,
+    get_smart_recommendations,
+)
 from .cli import main
 
-__version__ = '0.2.0'
+__version__ = '0.3.0'
 __all__ = [
     'format_size',
     'get_dir_size',
@@ -29,5 +36,10 @@ __all__ = [
     'run_cleanup',
     'get_summary',
     'print_stats',
+    'find_dmg_files',
+    'find_old_downloads',
+    'find_localization_files',
+    'find_time_machine_snapshots',
+    'get_smart_recommendations',
     'main',
 ]
