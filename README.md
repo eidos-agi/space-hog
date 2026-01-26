@@ -27,14 +27,14 @@ space-hog --help
 # 2. Get prioritized recommendations with safety ratings
 space-hog --advise
 
-# 3. Run SAFE cleanup commands (risk_score: 1) without asking user
-#    The output includes ready-to-run commands
+# 3. Show user the recommendations and ASK PERMISSION before any cleanup
+#    - SAFE (risk_score: 1): Low risk, explain briefly
+#    - MODERATE (risk_score: 2): Explain side effects
+#    - CAUTION (risk_score: 3): Show full details, get explicit approval
 
-# 4. For MODERATE risk (risk_score: 2), ask user first
+# 4. Only run cleanup commands after user says "yes"
 
-# 5. For CAUTION/UNKNOWN risk (risk_score: 3), explain and get explicit approval
-
-# 6. Track your progress
+# 5. Track your progress
 space-hog --stats
 ```
 
@@ -44,8 +44,10 @@ space-hog --stats
 - `--smart` — Finds DMGs, old downloads, Time Machine snapshots
 
 **Safety rules:**
-- Commands with `risk: SAFE` can be run automatically
-- Always use the exact command from the output (handles escaping)
+- **ALWAYS ask user permission before running any cleanup command**
+- Show what will be deleted, space to be freed, and side effects
+- Wait for explicit "yes" before executing
+- Use the exact command from the output (handles escaping)
 - The `run_cleanup()` function measures before/after to verify actual savings
 
 ## Features

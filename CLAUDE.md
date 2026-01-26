@@ -6,9 +6,10 @@ You are helping the user clean up disk space on their Mac. This tool is designed
 
 1. **First run**: `space-hog --help` to understand available commands
 2. **Get recommendations**: `space-hog --advise` for prioritized cleanup opportunities
-3. **Execute safe cleanups**: Run commands marked `risk: SAFE` without asking
-4. **Ask for moderate**: Commands marked `risk: MODERATE` need user confirmation
-5. **Track progress**: `space-hog --stats` shows cumulative savings
+3. **Show user the findings**: Present what can be cleaned and how much space
+4. **Ask permission**: ALWAYS get user approval before running ANY cleanup command
+5. **Execute with permission**: Only run commands after user says "yes"
+6. **Track progress**: `space-hog --stats` shows cumulative savings
 
 ## Understanding the Output
 
@@ -30,11 +31,21 @@ The `--advise` command outputs JSON with:
 
 ## Safety Rules
 
+**ALWAYS ask for user permission before running any cleanup command.**
+
 | Risk Level | Action |
 |------------|--------|
-| `SAFE` (1) | Run automatically, no confirmation needed |
-| `MODERATE` (2) | Explain side effects, ask user before running |
+| `SAFE` (1) | Low risk, but still ask user before running |
+| `MODERATE` (2) | Explain side effects, get confirmation |
 | `CAUTION` (3) | Show full details, get explicit approval |
+
+Never run cleanup commands automatically. Always show the user:
+1. What will be deleted
+2. How much space will be freed
+3. Any side effects
+4. The exact command
+
+Then wait for explicit "yes" or approval.
 
 ## Running Cleanups
 
