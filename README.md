@@ -1,3 +1,5 @@
+![Space Hog](logo.png)
+
 # Space Hog
 
 A CLI tool that finds wasted space on your Mac. Identifies large files, caches, duplicates, unused applications, and Docker bloat.
