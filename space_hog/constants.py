@@ -23,20 +23,43 @@ SPACE_HOG_PATTERNS = {
 
 # Cache locations to scan
 CACHE_LOCATIONS = [
+    # System caches
     ('~/Library/Caches', 'Application caches'),
+    ('~/.cache', 'General cache'),
+
+    # AI tools (often huge!)
+    ('~/.ollama', 'Ollama models'),
+    ('~/.codeium', 'Codeium AI cache'),
+    ('~/.gemini', 'Gemini CLI'),
+    ('~/.claude', 'Claude Code cache'),
+
+    # Dev tools
     ('~/Library/Application Support/Code/Cache', 'VS Code cache'),
     ('~/Library/Application Support/Code/CachedData', 'VS Code cached data'),
+    ('~/.vscode', 'VS Code extensions'),
     ('~/Library/Application Support/Slack/Cache', 'Slack cache'),
     ('~/Library/Application Support/discord/Cache', 'Discord cache'),
     ('~/Library/Application Support/Google/Chrome/Default/Cache', 'Chrome cache'),
+
+    # Xcode
     ('~/Library/Developer/Xcode/DerivedData', 'Xcode derived data'),
     ('~/Library/Developer/Xcode/Archives', 'Xcode archives'),
+    ('~/Library/Developer/Xcode/iOS DeviceSupport', 'Xcode device symbols'),
     ('~/Library/Developer/CoreSimulator', 'iOS Simulators'),
+
+    # Package managers
     ('~/.npm', 'NPM cache'),
     ('~/.yarn/cache', 'Yarn cache'),
-    ('~/.cache', 'General cache'),
+    ('~/.pyenv', 'Python versions (pyenv)'),
+    ('~/.local', 'pip/local installs'),
+    ('~/.cargo', 'Rust packages'),
+    ('~/.rustup', 'Rust toolchain'),
+
+    # Other dev
+    ('~/.mozbuild', 'Mozilla build cache'),
     ('~/.docker', 'Docker data'),
     ('~/Library/Containers/com.docker.docker', 'Docker Desktop'),
+    ('~/Library/Containers/com.microsoft.teams2', 'Microsoft Teams'),
 ]
 
 # Maps cache paths to their cleanup info keys
@@ -48,8 +71,12 @@ CACHE_TO_CLEANUP = {
     '~/.cache': 'dot_cache',
     '~/Library/Developer/CoreSimulator': 'simulators',
     '~/Library/Developer/Xcode/DerivedData': 'xcode_derived',
+    '~/Library/Developer/Xcode/iOS DeviceSupport': 'xcode_device_support',
     '~/Library/Containers/com.docker.docker': 'docker',
     '~/.docker': 'docker',
+    '~/.ollama': 'ollama',
+    '~/.cargo': 'cargo',
+    '~/.pyenv': 'pyenv',
 }
 
 # Cleanup commands with safety information
@@ -144,5 +171,49 @@ CLEANUP_INFO = {
         'description': 'Removes cached yarn packages.',
         'side_effects': ['Next yarn install will re-download packages'],
         'recommendation': 'Safe to run.',
+    },
+    'ollama': {
+        'command': 'ollama list  # then: ollama rm <model>',
+        'name': 'Ollama Models',
+        'risk': 'MODERATE',
+        'risk_score': 2,
+        'description': 'Large language models downloaded for local AI. Each model is 2-40+ GB.',
+        'side_effects': [
+            'Must re-download models if you remove them',
+            'Run "ollama list" to see models first',
+        ],
+        'recommendation': 'Remove unused models with "ollama rm <model>". Keep models you use regularly.',
+    },
+    'xcode_device_support': {
+        'command': 'rm -rf ~/Library/Developer/Xcode/iOS\\ DeviceSupport/*',
+        'name': 'Xcode Device Symbols',
+        'risk': 'SAFE',
+        'risk_score': 1,
+        'description': 'Debug symbols for physical iOS devices. Re-downloads when you connect a device.',
+        'side_effects': [
+            'First debug on each device will be slower (downloads symbols)',
+        ],
+        'recommendation': 'Safe to delete. Symbols re-download automatically when needed.',
+    },
+    'cargo': {
+        'command': 'cargo cache -a  # or: rm -rf ~/.cargo/registry/cache',
+        'name': 'Rust Cargo Cache',
+        'risk': 'SAFE',
+        'risk_score': 1,
+        'description': 'Cached Rust crate downloads.',
+        'side_effects': ['Next cargo build will re-download crates'],
+        'recommendation': 'Safe to run. Install cargo-cache for better control: cargo install cargo-cache',
+    },
+    'pyenv': {
+        'command': 'pyenv versions  # then: pyenv uninstall <version>',
+        'name': 'Python Versions (pyenv)',
+        'risk': 'MODERATE',
+        'risk_score': 2,
+        'description': 'Full Python installations managed by pyenv.',
+        'side_effects': [
+            'Must reinstall Python versions if you remove them',
+            'Projects using removed versions will break',
+        ],
+        'recommendation': 'Run "pyenv versions" to see installed. Remove old versions you don\'t use.',
     },
 }
