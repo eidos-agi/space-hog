@@ -1,5 +1,38 @@
 # Changelog
 
+## 2026-01-25
+
+### Docker Volume Cleanup
+
+Investigated and cleaned orphaned Docker volumes.
+
+**Volumes traced to source:**
+| Volume | Source Project | Location |
+|--------|---------------|----------|
+| whospent | WhoSpent app | `~/repos-bv/bcm-capital/whospent/` |
+| Sable | Sable app | `~/repos-aic/Sable/` |
+| aicdashboard | AIC Dashboard | `~/repos-aic/aic/supabase/` |
+| hrezmztjmvzzibfhvpyo | Supabase cloud project | Linked by multiple apps |
+| zen-mcp-server | Zen MCP | `~/repos/zen-mcp-server/` |
+
+**Deleted (unused):**
+- supabase_db_whospent (266 MB)
+- supabase_edge_runtime_whospent
+- supabase_config_whospent
+- supabase_inbucket_whospent
+- supabase_storage_whospent
+- supabase_edge_runtime_Sable (45 MB)
+- supabase_edge_runtime_aicdashboard
+- supabase_edge_runtime_hrezmztjmvzzibfhvpyo
+
+**Kept:** zen-mcp-server (11 KB)
+
+**Result:** 9 volumes → 1 volume, freed 312 MB inside Docker
+
+**Key learning:** Deleting volumes doesn't shrink Docker.raw - the VM overhead actually increased slightly (26.0 → 26.6 GB) because the deleted blocks become dead space in the sparse file.
+
+---
+
 ## 2026-01-23
 
 ### Cleanup Session
