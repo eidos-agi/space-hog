@@ -10,6 +10,8 @@ triggers:
   - what's using space
   - storage
   - free up space
+  - unused apps
+  - applications
 ---
 
 # Space Hog - Disk Space Advisor
@@ -21,9 +23,25 @@ Analyze and reclaim wasted disk space on macOS.
 ```bash
 cd ~/repos-personal/space-hog
 
-python3 space_hog.py --advise   # Prioritized recommendations
-python3 space_hog.py --docker   # Docker deep-dive
+python3 space_hog.py --advise   # Prioritized cleanup recommendations
+python3 space_hog.py --docker   # Docker deep-dive (VM bloat, volumes)
+python3 space_hog.py --apps     # Find unused/AI-replaceable apps
 python3 space_hog.py            # Full scan
+```
+
+## Package Structure
+
+```
+space_hog/
+├── cli.py           # Entry point, argparse
+├── utils.py         # format_size, get_dir_size, Colors
+├── constants.py     # CLEANUP_INFO, CACHE_LOCATIONS
+├── scanners.py      # find_large_files, find_space_hogs
+├── caches.py        # check_caches, get_trash_size
+├── docker.py        # analyze_docker, print_docker_analysis
+├── applications.py  # scan_applications, AI-replaceable detection
+├── advisor.py       # print_advise, print_cleanup_guide
+└── runner.py        # scan_all orchestration
 ```
 
 ## Cleanup Priority Order
@@ -41,6 +59,41 @@ rm -rf ~/.Trash/*                # Trash
 ```bash
 docker system prune -a           # Unused images (doesn't shrink VM disk!)
 docker volume prune              # Unused volumes (check projects first!)
+```
+
+---
+
+# Applications Analysis
+
+## Finding Unused Apps
+
+```bash
+python3 space_hog.py --apps                    # Default: 90 days unused
+python3 space_hog.py --apps --days-unused 180  # Custom threshold
+```
+
+Shows:
+- Apps not opened in X days (via Spotlight metadata)
+- AI-replaceable apps (translation, writing tools, etc.)
+- Largest apps with unused/replaceable markers
+
+## AI-Replaceable Apps
+
+Apps that AI assistants can often replace:
+- **Writing**: Grammarly, Hemingway Editor, ProWritingAid
+- **Translation**: Google Translate, DeepL
+- **Research**: DEVONthink, Pocket, Instapaper
+- **Code docs**: Dash (AI has built-in documentation knowledge)
+- **Calculators**: Numi, Soulver (AI handles calculations)
+
+## Removing Apps
+
+```bash
+# Move to trash (recoverable)
+mv '/Applications/AppName.app' ~/.Trash/
+
+# Use AppCleaner for complete removal (app + associated files)
+# https://freemacsoft.net/appcleaner/
 ```
 
 ---
