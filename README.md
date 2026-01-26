@@ -15,7 +15,7 @@ A CLI tool that finds wasted space on your Mac. Identifies large files, caches, 
 
 ```bash
 # Clone the repository
-git clone https://github.com/dshanklin-bv/space-hog.git
+git clone https://github.com/rhea-impact/space-hog.git
 cd space-hog
 
 # Install (editable mode for development)

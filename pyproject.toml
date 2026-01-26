@@ -31,5 +31,5 @@ classifiers = [
 space-hog = "space_hog:main"
 
 [project.urls]
-Homepage = "https://github.com/dshanklin-bv/space-hog"
-Repository = "https://github.com/dshanklin-bv/space-hog"
+Homepage = "https://github.com/rhea-impact/space-hog"
+Repository = "https://github.com/rhea-impact/space-hog"
