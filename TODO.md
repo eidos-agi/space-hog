@@ -89,3 +89,4 @@
 - [x] Cleanup guide (`--cleanup-guide`)
 - [x] Applications analysis (`--apps`) - unused apps, AI-replaceable suggestions
 - [x] Modular refactor - split into `space_hog/` package with functional modules
+- [x] Statistics tracking (`--stats`) - cleanup history, total space saved

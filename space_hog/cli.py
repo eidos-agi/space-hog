@@ -10,6 +10,7 @@ from .scanners import find_large_files, find_space_hogs
 from .docker import print_docker_analysis
 from .advisor import print_advise, print_cleanup_guide
 from .applications import print_applications_analysis
+from .stats import print_stats
 from .runner import scan_all
 
 
@@ -27,6 +28,7 @@ Examples:
   space-hog --advise            # Prioritized cleanup recommendations
   space-hog --docker            # Docker deep-dive (VM bloat, volumes)
   space-hog --apps              # Find unused/AI-replaceable apps
+  space-hog --stats             # Show cleanup history and savings
 
 Currently scans:
   - Trash, Downloads (old files)
@@ -65,6 +67,8 @@ Planned features (see TODO.md):
                         help='Detailed Docker disk analysis (VM bloat, images, volumes)')
     parser.add_argument('--apps', action='store_true',
                         help='Analyze applications (unused, AI-replaceable)')
+    parser.add_argument('--stats', action='store_true',
+                        help='Show cleanup history and total space saved')
     parser.add_argument('--days-unused', type=int, default=90,
                         help='Days threshold for unused apps (default: 90)')
 
@@ -89,6 +93,11 @@ Planned features (see TODO.md):
     if args.apps:
         print("\nSpace Hog - Applications Analysis")
         print_applications_analysis(min_days_unused=args.days_unused)
+        sys.exit(0)
+
+    if args.stats:
+        print("\nSpace Hog - Statistics")
+        print_stats()
         sys.exit(0)
 
     # Standard scanning modes
