@@ -2,7 +2,37 @@
 
 ## 2026-01-25
 
-### Docker Volume Cleanup
+### Full Session Summary
+
+#### 1. Cache Cleanup (~75 GB freed)
+```bash
+npm cache clean --force          # 33.3 GB → 2.7 GB
+rm -rf ~/Library/Caches/*        # 22.5 GB → 1.8 MB
+rm -rf ~/.cache/*                # 18.0 GB → 0
+xcrun simctl delete unavailable  # 6.3 GB → 3.7 GB
+docker system prune -a           # 1.6 GB freed
+```
+
+#### 2. Docker Analysis Improvements
+
+**Discovered Docker.raw is a sparse file:**
+- Logical size (ls): 60 GB - max allocation
+- Actual disk usage (du): 28 GB - real bytes on disk
+- Docker objects: 1.9 GB - images + containers + volumes
+- VM overhead: 26 GB - dead space from deleted images
+
+**Key insight:** `docker system prune` doesn't free macOS disk space - it just creates dead space inside the VM.
+
+#### 3. Research: Reduce Disk Limit vs Leave It
+
+| Action | Data Loss | Recommendation |
+|--------|-----------|----------------|
+| Increase limit | None | Always safe |
+| Decrease limit | **YES - wipes everything** | Only if urgent |
+
+Decision: Leave the 26 GB overhead since reducing requires re-pulling all images.
+
+#### 4. Docker Volume Cleanup
 
 Investigated and cleaned orphaned Docker volumes.
 
