@@ -2,7 +2,19 @@
 
 # Space Hog
 
-A CLI tool that finds wasted space on your Mac. Identifies large files, caches, duplicates, unused applications, and Docker bloat.
+A CLI tool that finds and reclaims wasted disk space on macOS.
+
+### Built for AI Agents
+
+Space Hog is designed to be run by AI coding assistants like [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Codex CLI](https://github.com/openai/codex), and [Gemini CLI](https://github.com/google-gemini/gemini-cli).
+
+Why? Disk cleanup is tedious for humans but trivial for AI:
+- **Structured output** — JSON data the AI can parse and reason about
+- **Safety ratings** — AI knows which commands are safe to run without asking
+- **Context awareness** — AI understands your Docker projects, dev environments, and what's actually in use
+- **Automatic execution** — AI runs the cleanup commands and tracks cumulative savings
+
+Just ask your AI assistant to "clean up my disk" and let it handle the rest.
 
 ## Features
 
