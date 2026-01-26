@@ -70,9 +70,10 @@
   - Alert on thresholds
   - Historical comparison
 
-- [ ] **Unused apps** - apps not opened in 6+ months
+- [x] **Unused apps** - apps not opened in 6+ months (`--apps`)
   - Check `mdls -name kMDItemLastUsedDate`
   - List with size and last used date
+  - AI-replaceable app suggestions
 
 - [ ] **Screenshot cleanup**
   - Desktop screenshots (`Screenshot *.png`)
@@ -86,3 +87,5 @@
 - [x] Volume project tracking
 - [x] Prioritized recommendations (`--advise`)
 - [x] Cleanup guide (`--cleanup-guide`)
+- [x] Applications analysis (`--apps`) - unused apps, AI-replaceable suggestions
+- [x] Modular refactor - split into `space_hog/` package with functional modules
