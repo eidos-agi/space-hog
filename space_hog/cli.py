@@ -10,9 +10,194 @@ from .scanners import find_large_files, find_space_hogs
 from .docker import print_docker_analysis
 from .advisor import print_advise, print_cleanup_guide
 from .applications import print_applications_analysis
-from .stats import print_stats
+from .stats import print_stats, print_regrowth_report
 from .runner import scan_all
 from .smart import get_smart_recommendations
+from .memory import print_memory_analysis
+from .preferences import print_preferences, add_essential_app, add_blacklist_app
+
+
+def print_full_report():
+    """Print complete system health report."""
+    import shutil
+    from .advisor import get_disk_health, detect_personas, collect_cleanup_opportunities, classify_anomalies
+    from .memory import get_top_ram_consumers, aggregate_by_app, get_login_items
+    from .applications import scan_applications
+    from .stats import get_summary, calculate_regrowth
+    from .preferences import load_preferences, is_essential
+
+    c = Colors
+
+    # ==========================================================================
+    # EXECUTIVE SUMMARY
+    # ==========================================================================
+    print_header("SYSTEM HEALTH SUMMARY")
+
+    disk = get_disk_health()
+    status_color = getattr(c, disk['status_color'], '')
+
+    print(f"  {c.BOLD}DISK{c.RESET}")
+    print(f"    Status:     {status_color}{disk['status']}{c.RESET}")
+    print(f"    Free:       {disk['free_human']} / {disk['total_human']} ({100-disk['percentage_used']:.0f}%)")
+
+    # RAM
+    processes = get_top_ram_consumers(limit=20)
+    aggregated = aggregate_by_app(processes)
+    total_ram = sum(a['rss_bytes'] for a in aggregated[:10])
+    print()
+    print(f"  {c.BOLD}MEMORY{c.RESET}")
+    print(f"    Top 10 apps: {format_size(total_ram)} RAM")
+    if aggregated:
+        top_app = aggregated[0]
+        essential_marker = f" {c.GREEN}(essential){c.RESET}" if is_essential(top_app['app_name']) else ""
+        print(f"    Heaviest:    {top_app['app_name']} ({top_app['rss_human']}){essential_marker}")
+
+    # Cleanup opportunities
+    opportunities = collect_cleanup_opportunities()
+    total_reclaimable = sum(o['size'] for o in opportunities)
+    safe_reclaimable = sum(o['size'] for o in opportunities if o.get('risk') == 'SAFE')
+    print()
+    print(f"  {c.BOLD}DISK CLEANUP{c.RESET}")
+    print(f"    Reclaimable: {format_size(total_reclaimable)}")
+    print(f"    Safe:        {format_size(safe_reclaimable)}")
+
+    # Apps
+    app_results = scan_applications(min_days_unused=90)
+    unused_apps = [a for a in app_results['unused_apps'] if not is_essential(a['name'])]
+    unused_size = sum(a['size'] for a in unused_apps)
+    print()
+    print(f"  {c.BOLD}APPS{c.RESET}")
+    print(f"    Total:       {len(app_results['all_apps'])} apps ({format_size(app_results['total_size'])})")
+    print(f"    Unused:      {len(unused_apps)} apps ({format_size(unused_size)})")
+
+    # ==========================================================================
+    # ANOMALIES
+    # ==========================================================================
+    classified = classify_anomalies(opportunities)
+    if classified['anomalies']:
+        print()
+        print_header("ANOMALIES")
+        for op in classified['anomalies'][:3]:
+            print(f"  {c.YELLOW}[!]{c.RESET} {op['name']}: {op['size_human']} ({op.get('deviation', 0):.1f}x typical)")
+
+    # ==========================================================================
+    # TOP ACTIONS
+    # ==========================================================================
+    print()
+    print_header("RECOMMENDED ACTIONS")
+
+    action_num = 1
+
+    # Quick clean if disk is low
+    if disk['status'] in ('CRITICAL', 'LOW') and safe_reclaimable > 100 * 1024 * 1024:
+        print(f"  {action_num}. {c.GREEN}Run quick clean{c.RESET} - reclaim {format_size(safe_reclaimable)} instantly")
+        print(f"     Command: space-hog --quick-clean")
+        action_num += 1
+
+    # Unused apps
+    if unused_apps:
+        top_unused = unused_apps[0]
+        print(f"  {action_num}. {c.YELLOW}Remove unused apps{c.RESET} - {len(unused_apps)} apps, {format_size(unused_size)}")
+        print(f"     Top: {top_unused['name']} ({top_unused['size_human']}, {top_unused['days_since_used']}d unused)")
+        action_num += 1
+
+    # Anomalies
+    for op in classified['anomalies'][:2]:
+        print(f"  {action_num}. {c.YELLOW}Clean {op['name']}{c.RESET} - {op['size_human']}")
+        print(f"     Command: {op.get('command', 'N/A')}")
+        action_num += 1
+
+    # High RAM apps (non-essential)
+    for app in aggregated[:3]:
+        if app['rss_bytes'] > 1024 * 1024 * 1024 and not is_essential(app['app_name']):
+            print(f"  {action_num}. {c.YELLOW}Consider closing {app['app_name']}{c.RESET} - using {app['rss_human']} RAM")
+            action_num += 1
+            break
+
+    # ==========================================================================
+    # QUICK STATS
+    # ==========================================================================
+    summary = get_summary()
+    regrowth = calculate_regrowth()
+
+    if summary['total_saved'] > 0 or regrowth.get('has_data'):
+        print()
+        print_header("HISTORY")
+        if summary['total_saved'] > 0:
+            print(f"  Lifetime savings: {c.GREEN}{summary['total_saved_human']}{c.RESET} ({summary['total_cleanups']} cleanups)")
+        if regrowth.get('has_data'):
+            print(f"  Regrowth rate:    {regrowth.get('rate_weekly_human', 'N/A')}/week")
+            print(f"  Last cleanup:     {regrowth.get('last_cleanup_date', 'N/A')} ({regrowth.get('days_since_cleanup', 0)} days ago)")
+
+    print()
+    print(f"  {c.BOLD}For more details:{c.RESET}")
+    print(f"    space-hog --advise    Detailed disk cleanup recommendations")
+    print(f"    space-hog --memory    RAM and process analysis")
+    print(f"    space-hog --apps      Application breakdown")
+    print()
+
+
+def run_tier_cleanup(tier: int = 1, dry_run: bool = False):
+    """Run cleanup for a specific tier."""
+    from .advisor import collect_cleanup_opportunities, calculate_tier_savings
+    from .stats import run_cleanup, start_cleanup_session, end_cleanup_session, print_post_cleanup_summary
+
+    print_header(f"TIER {tier} CLEANUP" + (" (DRY RUN)" if dry_run else ""))
+
+    # Collect opportunities and calculate tiers
+    opportunities = collect_cleanup_opportunities()
+    tier_savings = calculate_tier_savings(opportunities)
+
+    if tier not in tier_savings:
+        print(f"  Invalid tier: {tier}")
+        return
+
+    tier_info = tier_savings[tier]
+    c = Colors
+
+    print(f"  {c.BOLD}{tier_info['name']}{c.RESET}: {tier_info['description']}")
+    print(f"  Items: {tier_info['item_count']}")
+    print(f"  Potential savings: {c.GREEN}{tier_info['size_human']}{c.RESET}")
+    print()
+
+    if not tier_info['items']:
+        print("  No items to clean in this tier.")
+        return
+
+    if dry_run:
+        print(f"  {c.YELLOW}DRY RUN - Commands that would be executed:{c.RESET}")
+        print()
+        for item in tier_info['items']:
+            print(f"    {item['name']}: {item['size_human']}")
+            print(f"      Command: {item['command']}")
+            print()
+        return
+
+    # Actually run cleanups
+    session = start_cleanup_session()
+
+    print(f"  {c.BOLD}Running cleanups...{c.RESET}")
+    print()
+
+    for item in tier_info['items']:
+        print(f"  Cleaning {item['name']}...", end=' ', flush=True)
+        result = run_cleanup(
+            command=item['command'],
+            description=item['name'],
+            category=item.get('category_key', 'manual')
+        )
+        if result['success']:
+            print(f"{c.GREEN}OK{c.RESET} ({result['bytes_freed_human']})")
+            session['cleanups'].append({
+                'description': item['name'],
+                'freed_human': result['bytes_freed_human'],
+            })
+        else:
+            print(f"{c.YELLOW}SKIPPED{c.RESET}")
+
+    print()
+    session = end_cleanup_session(session)
+    print_post_cleanup_summary(session)
 
 
 def print_smart_analysis():
@@ -104,6 +289,15 @@ Examples:
   space-hog --docker            # Docker deep-dive (VM bloat, volumes)
   space-hog --apps              # Find unused/AI-replaceable apps
   space-hog --stats             # Show cleanup history and savings
+  space-hog --regrowth          # Show regrowth tracking and recommendations
+  space-hog --quick-clean       # Run safe tier 1 cleanup
+  space-hog --run-tier 2        # Run tier 2 cleanup (Docker + safe)
+  space-hog --run-tier 2 --dry-run  # Preview tier 2 cleanup
+  space-hog --memory            # Analyze RAM usage and autostart items
+  space-hog --prefs             # Show user preferences
+  space-hog --essential Comet   # Mark Comet as essential (never remove)
+  space-hog --blacklist Rewind  # Mark Rewind as always removable
+  space-hog --full              # Complete system health report
 
 Currently scans:
   - Trash, Downloads (old files, DMGs)
@@ -146,6 +340,22 @@ Currently scans:
                         help='Smart analysis (DMGs, old downloads, localization, snapshots)')
     parser.add_argument('--dry-run', action='store_true',
                         help='Preview what would be deleted without actually deleting')
+    parser.add_argument('--regrowth', action='store_true',
+                        help='Show regrowth tracking and cleanup frequency recommendations')
+    parser.add_argument('--quick-clean', action='store_true',
+                        help='Run tier 1 cleanup (safe caches + trash)')
+    parser.add_argument('--run-tier', type=int, choices=[1, 2, 3],
+                        help='Run cleanup tier 1-3 (use with --dry-run to preview)')
+    parser.add_argument('--memory', '-m', action='store_true',
+                        help='Analyze RAM usage, autostart items, and background processes')
+    parser.add_argument('--prefs', action='store_true',
+                        help='Show user preferences (essential/blacklist apps)')
+    parser.add_argument('--essential', type=str, metavar='APP',
+                        help='Mark an app as essential (never suggest removing)')
+    parser.add_argument('--blacklist', type=str, metavar='APP',
+                        help='Mark an app as removable (always suggest removing)')
+    parser.add_argument('--full', '-f', action='store_true',
+                        help='Full system health report (disk + memory + apps + recommendations)')
 
     args = parser.parse_args()
 
@@ -178,6 +388,43 @@ Currently scans:
     if args.smart:
         print("\nSpace Hog - Smart Analysis")
         print_smart_analysis()
+        sys.exit(0)
+
+    if args.regrowth:
+        print("\nSpace Hog - Regrowth Tracking")
+        print_regrowth_report()
+        sys.exit(0)
+
+    if args.quick_clean or args.run_tier:
+        run_tier_cleanup(
+            tier=args.run_tier or 1,
+            dry_run=args.dry_run
+        )
+        sys.exit(0)
+
+    if args.memory:
+        print("\nSpace Hog - Memory Analysis")
+        print_memory_analysis()
+        sys.exit(0)
+
+    if args.prefs:
+        print("\nSpace Hog - Preferences")
+        print_preferences()
+        sys.exit(0)
+
+    if args.essential:
+        add_essential_app(args.essential)
+        print(f"Marked '{args.essential}' as essential (will never suggest removing)")
+        sys.exit(0)
+
+    if args.blacklist:
+        add_blacklist_app(args.blacklist)
+        print(f"Marked '{args.blacklist}' as blacklisted (will always suggest removing)")
+        sys.exit(0)
+
+    if args.full:
+        print("\nSpace Hog - Full System Health Report")
+        print_full_report()
         sys.exit(0)
 
     # Standard scanning modes

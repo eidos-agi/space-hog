@@ -13,6 +13,15 @@ from typing import Optional
 from .utils import format_size
 
 
+def _record_removal(item_name: str, item_type: str, size_bytes: int):
+    """Record a removal decision for learning preferences."""
+    try:
+        from .preferences import record_decision
+        record_decision(item_type, item_name, 'removed', size_bytes)
+    except Exception:
+        pass  # Don't fail the deletion if recording fails
+
+
 def move_to_trash(path: str, dry_run: bool = False) -> dict:
     """Safely move a file or directory to Trash instead of deleting.
 
@@ -67,6 +76,8 @@ def move_to_trash(path: str, dry_run: bool = False) -> dict:
         )
 
         if result.returncode == 0:
+            # Record the decision for learning
+            _record_removal(target.name, 'file' if target.is_file() else 'directory', size)
             return {
                 'success': True,
                 'message': f'Moved to Trash: {path}',
@@ -99,6 +110,8 @@ def _fallback_trash(target: Path, size: int) -> dict:
 
     try:
         shutil.move(str(target), str(trash_path))
+        # Record the decision for learning
+        _record_removal(target.name, 'file' if target.is_file() else 'directory', size)
         return {
             'success': True,
             'message': f'Moved to Trash: {target.name} (as {trash_name})',
@@ -180,6 +193,47 @@ def trash_contents(directory: str, dry_run: bool = False) -> dict:
         'dry_run': dry_run,
         'recoverable': True,
     }
+
+
+def trash_app(app_name: str, dry_run: bool = False) -> dict:
+    """Move an application to Trash and record the decision.
+
+    Args:
+        app_name: Name of the app (e.g., "Inkscape" or "Inkscape.app")
+        dry_run: If True, only show what would be done
+
+    Returns:
+        dict with result info
+    """
+    # Normalize app name
+    if not app_name.endswith('.app'):
+        app_name = f"{app_name}.app"
+
+    app_path = Path('/Applications') / app_name
+
+    if not app_path.exists():
+        # Try user Applications folder
+        app_path = Path.home() / 'Applications' / app_name
+
+    if not app_path.exists():
+        return {
+            'success': False,
+            'message': f'App not found: {app_name}',
+            'bytes_freed': 0,
+            'dry_run': dry_run,
+        }
+
+    result = move_to_trash(str(app_path), dry_run=dry_run)
+
+    # Record as an app removal specifically (for learning)
+    if result['success'] and not dry_run:
+        try:
+            from .preferences import record_decision
+            record_decision('app', app_name.replace('.app', ''), 'removed', result.get('bytes_freed', 0))
+        except Exception:
+            pass
+
+    return result
 
 
 def safe_cleanup(command: str, description: str, dry_run: bool = False) -> dict:

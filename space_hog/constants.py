@@ -322,3 +322,175 @@ CLEANUP_INFO = {
         'recommendation': 'Use Mail.app > Mailbox > Erase Deleted Items. Or rebuild mailbox.',
     },
 }
+
+
+# =============================================================================
+# TYPICAL BASELINES FOR ANOMALY DETECTION
+# =============================================================================
+# These represent "normal" sizes for each category in bytes.
+# Items exceeding ANOMALY_THRESHOLD * baseline are flagged as anomalies.
+
+TYPICAL_BASELINES = {
+    'trash': 500 * 1024 * 1024,              # 500 MB
+    'npm': 1 * 1024**3,                       # 1 GB
+    'yarn': 500 * 1024 * 1024,                # 500 MB
+    'pnpm': 500 * 1024 * 1024,                # 500 MB
+    'bun': 200 * 1024 * 1024,                 # 200 MB
+    'docker': 10 * 1024**3,                   # 10 GB
+    'xcode_derived': 5 * 1024**3,             # 5 GB
+    'xcode_device_support': 5 * 1024**3,      # 5 GB
+    'simulators': 10 * 1024**3,               # 10 GB
+    'ollama': 20 * 1024**3,                   # 20 GB (2-3 models)
+    'pyenv': 3 * 1024**3,                     # 3 GB (2-3 versions)
+    'cargo': 2 * 1024**3,                     # 2 GB
+    'library_caches': 5 * 1024**3,            # 5 GB
+    'dot_cache': 1 * 1024**3,                 # 1 GB
+    'user_logs': 500 * 1024 * 1024,           # 500 MB
+    'gradle': 2 * 1024**3,                    # 2 GB
+    'maven': 2 * 1024**3,                     # 2 GB
+    'cocoapods': 1 * 1024**3,                 # 1 GB
+    'ios_backups': 50 * 1024**3,              # 50 GB (1-2 backups)
+    'mail': 10 * 1024**3,                     # 10 GB
+}
+
+# Threshold multiplier for flagging as anomaly
+ANOMALY_THRESHOLD = 2.0  # Flag if > 2x typical
+
+
+# =============================================================================
+# PERSONA DETECTION INDICATORS
+# =============================================================================
+# Used to detect user type based on installed tools and cache sizes.
+
+PERSONA_INDICATORS = {
+    'ios_developer': {
+        'name': 'iOS Developer',
+        'emoji': '📱',
+        'paths': [
+            ('~/Library/Developer/Xcode/DerivedData', 100 * 1024 * 1024),
+            ('~/Library/Developer/CoreSimulator', 500 * 1024 * 1024),
+            ('~/Library/Developer/Xcode/iOS DeviceSupport', 100 * 1024 * 1024),
+        ],
+        'commands': ['xcrun', 'xcodebuild'],
+        'priority_categories': ['xcode_derived', 'simulators', 'xcode_device_support'],
+    },
+    'docker_user': {
+        'name': 'Docker User',
+        'emoji': '🐳',
+        'paths': [
+            ('~/Library/Containers/com.docker.docker', 500 * 1024 * 1024),
+        ],
+        'commands': ['docker'],
+        'priority_categories': ['docker'],
+    },
+    'python_dev': {
+        'name': 'Python Developer',
+        'emoji': '🐍',
+        'paths': [
+            ('~/.pyenv', 500 * 1024 * 1024),
+            ('~/.local/lib', 100 * 1024 * 1024),
+        ],
+        'commands': ['python3', 'pip', 'pyenv'],
+        'priority_categories': ['pyenv'],
+    },
+    'node_dev': {
+        'name': 'Node.js Developer',
+        'emoji': '🟢',
+        'paths': [
+            ('~/.npm', 200 * 1024 * 1024),
+            ('~/.yarn', 100 * 1024 * 1024),
+            ('~/.pnpm-store', 100 * 1024 * 1024),
+            ('~/.bun', 100 * 1024 * 1024),
+        ],
+        'commands': ['node', 'npm', 'yarn', 'pnpm', 'bun'],
+        'priority_categories': ['npm', 'yarn', 'pnpm', 'bun'],
+    },
+    'rust_dev': {
+        'name': 'Rust Developer',
+        'emoji': '🦀',
+        'paths': [
+            ('~/.cargo', 500 * 1024 * 1024),
+            ('~/.rustup', 200 * 1024 * 1024),
+        ],
+        'commands': ['cargo', 'rustc'],
+        'priority_categories': ['cargo'],
+    },
+    'ai_tinkerer': {
+        'name': 'AI Tinkerer',
+        'emoji': '🤖',
+        'paths': [
+            ('~/.ollama', 10 * 1024**3),  # 10GB+ indicates serious use
+            ('~/.codeium', 500 * 1024 * 1024),
+            ('~/.gemini', 100 * 1024 * 1024),
+        ],
+        'commands': ['ollama'],
+        'priority_categories': ['ollama'],
+    },
+    'java_dev': {
+        'name': 'Java Developer',
+        'emoji': '☕',
+        'paths': [
+            ('~/.gradle', 500 * 1024 * 1024),
+            ('~/.m2', 500 * 1024 * 1024),
+        ],
+        'commands': ['java', 'gradle', 'mvn'],
+        'priority_categories': ['gradle', 'maven'],
+    },
+}
+
+
+# =============================================================================
+# CLEANUP TIERS FOR SMART ACTIONS
+# =============================================================================
+# Tiered cleanup options for easier decision-making.
+
+CLEANUP_TIERS = {
+    1: {
+        'name': 'Quick Clean',
+        'description': 'Safe caches + Trash (no downside)',
+        'categories': [
+            'trash', 'npm', 'yarn', 'pnpm', 'bun', 'library_caches',
+            'dot_cache', 'user_logs', 'xcode_derived', 'xcode_device_support',
+            'cargo', 'gradle', 'maven', 'cocoapods',
+        ],
+        'risk_max': 1,  # Only SAFE items
+    },
+    2: {
+        'name': 'Developer Clean',
+        'description': 'Quick Clean + Docker prune + simulators',
+        'includes_tier': 1,
+        'categories': ['docker', 'simulators'],
+        'risk_max': 2,  # SAFE + MODERATE
+    },
+    3: {
+        'name': 'Deep Clean',
+        'description': 'All above + AI models + Python versions',
+        'includes_tier': 2,
+        'categories': ['ollama', 'pyenv'],
+        'risk_max': 2,
+        'interactive': True,  # Requires selection
+    },
+}
+
+
+# =============================================================================
+# DISK STATUS THRESHOLDS
+# =============================================================================
+
+DISK_STATUS = {
+    'CRITICAL': {
+        'threshold': 0.05,  # < 5% free
+        'message': 'CRITICAL - cleanup urgently recommended',
+        'color': 'RED',
+    },
+    'LOW': {
+        'threshold': 0.15,  # < 15% free
+        'message': 'LOW - cleanup recommended',
+        'color': 'YELLOW',
+    },
+    'HEALTHY': {
+        'threshold': 1.0,  # >= 15% free
+        'message': 'HEALTHY',
+        'color': 'GREEN',
+    },
+}
