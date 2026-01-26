@@ -1,11 +1,31 @@
 """Cleanup advisor for Space Hog."""
 
 import json
+import subprocess
 from pathlib import Path
 
 from .utils import format_size, get_dir_size, print_header, Colors
 from .constants import CACHE_LOCATIONS, CACHE_TO_CLEANUP, CLEANUP_INFO
 from .caches import get_trash_size
+
+
+def _has_unavailable_simulators() -> bool:
+    """Check if there are any unavailable iOS simulators."""
+    try:
+        result = subprocess.run(
+            ['xcrun', 'simctl', 'list', 'devices', 'unavailable'],
+            capture_output=True, text=True, timeout=10
+        )
+        # If there are unavailable devices, output will have device lines
+        # (not just headers like "== Devices ==" and "-- iOS X.X --")
+        lines = result.stdout.strip().split('\n')
+        for line in lines:
+            line = line.strip()
+            if line and not line.startswith('==') and not line.startswith('--'):
+                return True
+        return False
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        return False
 
 
 def collect_cleanup_opportunities() -> list[dict]:
@@ -37,6 +57,10 @@ def collect_cleanup_opportunities() -> list[dict]:
                             break
 
                     if cleanup_key and cleanup_key in CLEANUP_INFO:
+                        # Special case: only show simulators if there are unavailable ones
+                        if cleanup_key == 'simulators' and not _has_unavailable_simulators():
+                            continue
+
                         info = CLEANUP_INFO[cleanup_key].copy()
                         info['size'] = size
                         info['size_human'] = format_size(size)

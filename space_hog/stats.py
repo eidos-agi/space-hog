@@ -47,7 +47,10 @@ def save_stats(stats: dict):
 
 
 def record_cleanup(description: str, bytes_freed: int, category: str = 'manual'):
-    """Record a cleanup action."""
+    """Record a cleanup action. Only use if you've verified the cleanup worked."""
+    if bytes_freed <= 0:
+        return None  # Don't record zero or negative savings
+
     stats = load_stats()
 
     if not stats['first_run']:
@@ -59,6 +62,7 @@ def record_cleanup(description: str, bytes_freed: int, category: str = 'manual')
         'bytes_freed': bytes_freed,
         'category': category,
         'disk_free_after': shutil.disk_usage("/").free,
+        'verified': True,
     }
 
     stats['cleanups'].append(cleanup_record)
@@ -66,6 +70,65 @@ def record_cleanup(description: str, bytes_freed: int, category: str = 'manual')
 
     save_stats(stats)
     return cleanup_record
+
+
+def run_cleanup(command: str, description: str, category: str = 'manual') -> dict:
+    """Run a cleanup command and measure actual space freed.
+
+    This is the CORRECT way to run cleanups - it measures before/after
+    and only records verified savings.
+
+    Returns:
+        dict with 'success', 'bytes_freed', 'bytes_freed_human', 'error'
+    """
+    from .utils import format_size
+
+    # Measure before
+    free_before = shutil.disk_usage("/").free
+
+    # Run the command
+    try:
+        result = subprocess.run(
+            command,
+            shell=True,
+            capture_output=True,
+            text=True,
+            timeout=300  # 5 minute timeout
+        )
+        success = result.returncode == 0 or 'no matches found' in result.stderr
+    except subprocess.TimeoutExpired:
+        return {
+            'success': False,
+            'bytes_freed': 0,
+            'bytes_freed_human': '0 B',
+            'error': 'Command timed out',
+            'command': command,
+        }
+    except Exception as e:
+        return {
+            'success': False,
+            'bytes_freed': 0,
+            'bytes_freed_human': '0 B',
+            'error': str(e),
+            'command': command,
+        }
+
+    # Measure after
+    free_after = shutil.disk_usage("/").free
+    bytes_freed = free_after - free_before
+
+    # Only record if we actually freed space
+    if bytes_freed > 0:
+        record_cleanup(description, bytes_freed, category)
+
+    return {
+        'success': success,
+        'bytes_freed': max(0, bytes_freed),
+        'bytes_freed_human': format_size(max(0, bytes_freed)),
+        'error': None if success else result.stderr,
+        'command': command,
+        'recorded': bytes_freed > 0,
+    }
 
 
 def get_summary() -> dict:

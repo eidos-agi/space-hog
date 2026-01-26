@@ -64,16 +64,17 @@ CLEANUP_INFO = {
         'recommendation': 'Safe to run. Review Trash contents first if unsure.',
     },
     'npm': {
-        'command': 'npm cache clean --force',
+        'command': 'npm cache clean --force && rm -rf ~/.npm/_npx/*',
         'name': 'Clear NPM Cache',
         'risk': 'SAFE',
         'risk_score': 1,
-        'description': 'Removes cached npm packages. NPM self-heals since v5.',
+        'description': 'Removes cached npm packages and npx downloads.',
         'side_effects': [
             'Next npm install will re-download packages (slightly slower)',
+            'Next npx command will re-download the tool',
             'No impact on installed node_modules',
         ],
-        'recommendation': 'Safe to run. Try "npm cache verify" first for a gentler approach.',
+        'recommendation': 'Safe to run. The _npx cache is often the biggest part.',
     },
     'docker': {
         'command': 'docker system prune -a',
