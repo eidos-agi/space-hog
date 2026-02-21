@@ -161,6 +161,10 @@ def _parse_size(size_str: str) -> int:
         return 0
 
 
+def _sanitize(text: str) -> str:
+    import re
+    return re.sub(r'[\x00-\x1f\x7f]', '', text or '')
+
 def analyze_docker_volumes() -> list[dict]:
     """Get detailed volume information including project associations."""
     volumes = []
@@ -181,12 +185,12 @@ def analyze_docker_volumes() -> list[dict]:
             if 'com.supabase.cli.project=' in labels:
                 for part in labels.split(','):
                     if 'com.supabase.cli.project=' in part:
-                        project = part.split('=')[1]
+                        project = _sanitize(part.split('=')[1])
                         break
             elif 'com.docker.compose.project=' in labels:
                 for part in labels.split(','):
                     if 'com.docker.compose.project=' in part:
-                        project = part.split('=')[1]
+                        project = _sanitize(part.split('=')[1])
                         break
 
             # Parse size
@@ -211,6 +215,7 @@ def analyze_docker_volumes() -> list[dict]:
 
 
 def print_docker_analysis():
+    import shlex
     """Print detailed Docker disk analysis."""
     from .utils import print_header
 
@@ -332,8 +337,12 @@ def print_docker_analysis():
         if orphaned:
             orphan_size = sum(v['size'] for v in orphaned)
             print(f"  {c.YELLOW}Orphaned volumes (no running containers): {format_size(orphan_size)}{c.RESET}")
-            print(f"  To remove orphaned volumes for a project:")
-            print(f"    docker volume rm $(docker volume ls -q -f 'label=com.docker.compose.project=PROJECT_NAME')")
+        if orphaned:
+            orphan_size = sum(v['size'] for v in orphaned)
+            print(f"  {c.YELLOW}Orphaned volumes (no running containers): {format_size(orphan_size)}{c.RESET}")
+            print(f"  To remove orphaned volumes for a project, replace PROJECT_NAME below:")
+            print(f"    docker volume rm $(docker volume ls -q -f label=com.docker.compose.project=PROJECT_NAME)")
+            print()
             print()
 
     # JSON output for AI

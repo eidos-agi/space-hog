@@ -26,22 +26,38 @@ def find_large_files(root: Path, min_size_mb: int = 100) -> Generator[FileInfo, 
 
 
 def find_space_hogs(root: Path, min_size_mb: int = 50) -> list[tuple[Path, int, str]]:
-    """Find common space-hogging directories."""
+    """Find common space-hogging directories using a single optimized pass."""
+    import os
     results = []
     min_size = min_size_mb * 1024 * 1024
+    
+    # Pre-compile the targets for fast lookup
+    target_names = set(SPACE_HOG_PATTERNS.keys())
 
-    for pattern, description in SPACE_HOG_PATTERNS.items():
-        try:
-            for entry in root.rglob(pattern):
-                if entry.is_dir():
+    try:
+        for dirpath, dirnames, filenames in os.walk(root):
+            # Skip symlinks to avoid infinite loops and arbitrary reads
+            if os.path.islink(dirpath):
+                continue
+                
+            # Iterate over a copy of dirnames so we can modify the list to prevent descending
+            for dirname in list(dirnames):
+                full_path = Path(dirpath) / dirname
+                
+                if os.path.islink(full_path):
+                    continue
+                    
+                if dirname in target_names:
                     try:
-                        size = get_dir_size(entry)
+                        size = get_dir_size(full_path)
                         if size >= min_size:
-                            results.append((entry, size, description))
+                            results.append((full_path, size, SPACE_HOG_PATTERNS[dirname]))
                     except (PermissionError, OSError):
                         pass
-        except (PermissionError, OSError):
-            pass
+                    # Don't descend into space hogs (e.g. don't look for .git inside node_modules)
+                    dirnames.remove(dirname)
+    except (PermissionError, OSError):
+        pass
 
     return sorted(results, key=lambda x: x[1], reverse=True)
 

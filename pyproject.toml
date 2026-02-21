@@ -8,6 +8,9 @@ version = "0.2.0"
 description = "Find and reclaim wasted disk space on macOS"
 readme = "README.md"
 requires-python = ">=3.10"
+dependencies = [
+    "send2trash>=1.8.0"
+]
 license = {text = "MIT"}
 authors = [
     {name = "dshanklin-bv"}
