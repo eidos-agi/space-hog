@@ -13,6 +13,9 @@ authors = [
     {name = "dshanklin-bv"}
 ]
 keywords = ["disk", "space", "cleanup", "macos", "cli"]
+dependencies = [
+    "send2trash>=1.8.0",
+]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Environment :: Console",

@@ -3,12 +3,15 @@
 Moves files to Trash instead of permanent deletion, allowing recovery.
 """
 
-import os
 import shutil
-import subprocess
+import logging
 from pathlib import Path
 from datetime import datetime
-from typing import Optional
+
+try:
+    import send2trash
+except ImportError:  # pragma: no cover - dependency declared in pyproject.toml
+    send2trash = None
 
 from .utils import format_size
 
@@ -18,8 +21,8 @@ def _record_removal(item_name: str, item_type: str, size_bytes: int):
     try:
         from .preferences import record_decision
         record_decision(item_type, item_name, 'removed', size_bytes)
-    except Exception:
-        pass  # Don't fail the deletion if recording fails
+    except Exception as e:
+        logging.warning(f"Failed to record removal: {e}")
 
 
 def move_to_trash(path: str, dry_run: bool = False) -> dict:
@@ -60,38 +63,20 @@ def move_to_trash(path: str, dry_run: bool = False) -> dict:
             'dry_run': True,
         }
 
-    # Use macOS Finder to move to Trash (proper Trash behavior with undo support)
     try:
-        # AppleScript approach - proper Trash with "Put Back" support
-        script = f'''
-        tell application "Finder"
-            delete POSIX file "{target}"
-        end tell
-        '''
-        result = subprocess.run(
-            ['osascript', '-e', script],
-            capture_output=True,
-            text=True,
-            timeout=60
-        )
-
-        if result.returncode == 0:
-            # Record the decision for learning
-            _record_removal(target.name, 'file' if target.is_file() else 'directory', size)
-            return {
-                'success': True,
-                'message': f'Moved to Trash: {path}',
-                'bytes_freed': size,
-                'bytes_freed_human': format_size(size),
-                'dry_run': False,
-                'recoverable': True,
-            }
-        else:
-            # Fallback: manual move to ~/.Trash
+        if send2trash is None:
             return _fallback_trash(target, size)
 
-    except subprocess.TimeoutExpired:
-        return _fallback_trash(target, size)
+        send2trash.send2trash(str(target))
+        _record_removal(target.name, 'file' if target.is_file() else 'directory', size)
+        return {
+            'success': True,
+            'message': f'Moved to Trash: {path}',
+            'bytes_freed': size,
+            'bytes_freed_human': format_size(size),
+            'dry_run': False,
+            'recoverable': True,
+        }
     except Exception as e:
         return {
             'success': False,
@@ -175,6 +160,9 @@ def trash_contents(directory: str, dry_run: bool = False) -> dict:
         }
 
     for item in items:
+        if item.is_symlink():
+            errors.append(f'Skipped symlink: {item}')
+            continue
         result = move_to_trash(str(item), dry_run=dry_run)
         if result['success']:
             total_size += result.get('bytes_freed', 0)

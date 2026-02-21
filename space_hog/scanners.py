@@ -1,6 +1,7 @@
 """File system scanners for Space Hog."""
 
 import hashlib
+import os
 from collections import defaultdict
 from pathlib import Path
 from typing import Generator
@@ -29,19 +30,32 @@ def find_space_hogs(root: Path, min_size_mb: int = 50) -> list[tuple[Path, int, 
     """Find common space-hogging directories."""
     results = []
     min_size = min_size_mb * 1024 * 1024
+    pattern_names = set(SPACE_HOG_PATTERNS.keys())
 
-    for pattern, description in SPACE_HOG_PATTERNS.items():
-        try:
-            for entry in root.rglob(pattern):
-                if entry.is_dir():
-                    try:
-                        size = get_dir_size(entry)
-                        if size >= min_size:
-                            results.append((entry, size, description))
-                    except (PermissionError, OSError):
-                        pass
-        except (PermissionError, OSError):
-            pass
+    try:
+        for dirpath, dirnames, _ in os.walk(root, topdown=True, followlinks=False):
+            # Prevent traversal into symlinked directories.
+            dirnames[:] = [
+                d for d in dirnames
+                if not os.path.islink(os.path.join(dirpath, d))
+            ]
+            current = Path(dirpath)
+
+            if os.path.islink(current):
+                continue
+
+            if current.name in pattern_names:
+                try:
+                    size = get_dir_size(current)
+                    if size >= min_size:
+                        results.append((current, size, SPACE_HOG_PATTERNS[current.name]))
+                except (PermissionError, OSError):
+                    pass
+
+                # Stop descending into matched hog directories.
+                dirnames[:] = []
+    except (PermissionError, OSError):
+        pass
 
     return sorted(results, key=lambda x: x[1], reverse=True)
 

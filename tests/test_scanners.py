@@ -70,6 +70,34 @@ class TestFindSpaceHogs:
             hog_names = [h[2] for h in hogs]
             assert "Git repositories" in hog_names
 
+    def test_skips_symlinked_directories(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            real_node_modules = root / "real_node_modules"
+            real_node_modules.mkdir()
+            (real_node_modules / "file.txt").write_text("x" * 1000)
+
+            symlinked = root / "project" / "node_modules"
+            symlinked.parent.mkdir()
+            symlinked.symlink_to(real_node_modules, target_is_directory=True)
+
+            hogs = find_space_hogs(root, min_size_mb=0)
+            hog_paths = [h[0] for h in hogs]
+            assert symlinked not in hog_paths
+
+    def test_does_not_recurse_into_matched_space_hog_dirs(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            node_modules = root / "project" / "node_modules"
+            nested_git = node_modules / ".git"
+            nested_git.mkdir(parents=True)
+            (nested_git / "obj").write_text("x" * 5000)
+
+            hogs = find_space_hogs(root, min_size_mb=0)
+            hog_descriptions = [h[2] for h in hogs]
+            assert "Node.js dependencies" in hog_descriptions
+            assert "Git repositories" not in hog_descriptions
+
 
 class TestHashFile:
     """Tests for hash_file function."""
