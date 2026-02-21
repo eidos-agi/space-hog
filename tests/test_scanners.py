@@ -85,13 +85,15 @@ class TestFindSpaceHogs:
             hog_paths = [h[0] for h in hogs]
             assert symlinked not in hog_paths
 
-    def test_finds_nested_space_hogs_inside_matched_dirs(self):
+    def test_finds_space_hogs_in_independent_branches(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
-            node_modules = root / "project" / "node_modules"
-            nested_git = node_modules / ".git"
-            nested_git.mkdir(parents=True)
-            (nested_git / "obj").write_text("x" * 5000)
+            node_modules = root / "project_a" / "node_modules"
+            git_dir = root / "project_b" / ".git"
+            node_modules.mkdir(parents=True)
+            git_dir.mkdir(parents=True)
+            (node_modules / "dep").write_text("x" * 5000)
+            (git_dir / "obj").write_text("x" * 5000)
 
             hogs = find_space_hogs(root, min_size_mb=0)
             hog_descriptions = [h[2] for h in hogs]

@@ -51,8 +51,9 @@ class TestDockerLabelSafety:
     """Tests for Docker label sanitization and command quoting."""
 
     def test_sanitize_label_text_uses_strict_allowlist(self):
-        assert _sanitize_label_text("proj\x00name\x1f") == "projname"
-        assert _sanitize_label_text("my project;$(rm -rf /)|x") == "myprojectrm-rfx"
+        assert _sanitize_label_text("safe.project-1") == "safe.project-1"
+        assert _sanitize_label_text("proj\x00name\x1f") is None
+        assert _sanitize_label_text("my project;$(rm -rf /)|x") is None
         assert _sanitize_label_text("\n\t ;()$|") is None
 
     def test_analyze_docker_volumes_sanitizes_project(self, monkeypatch):
@@ -75,7 +76,7 @@ class TestDockerLabelSafety:
         volumes = analyze_docker_volumes()
 
         assert len(volumes) == 1
-        assert volumes[0]["project"] == "projevil"
+        assert volumes[0]["project"] is None
 
     def test_print_docker_analysis_quotes_project_name(self, monkeypatch, capsys):
         monkeypatch.setattr(

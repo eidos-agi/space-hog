@@ -14,8 +14,9 @@ def _sanitize_label_text(text: str | None) -> str | None:
     """Allow only safe label characters for output and shell use."""
     if not text:
         return None
-    cleaned = re.sub(r'[^a-zA-Z0-9_.-]', '', text).strip()
-    return cleaned or None
+    if re.fullmatch(r'^[a-zA-Z0-9_.-]+$', text):
+        return text
+    return None
 
 
 def analyze_docker() -> dict:

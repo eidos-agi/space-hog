@@ -3,8 +3,11 @@
 Moves files to Trash instead of permanent deletion, allowing recovery.
 """
 
-import shutil
 import logging
+import os
+import shlex
+import shutil
+import stat
 from pathlib import Path
 from datetime import datetime
 
@@ -25,6 +28,35 @@ def _record_removal(item_name: str, item_type: str, size_bytes: int):
         logging.warning(f"Failed to record removal: {e}")
 
 
+def _estimate_path_size(target: Path, target_stat: os.stat_result) -> int:
+    """Estimate bytes represented by a target path without following symlinks."""
+    if stat.S_ISREG(target_stat.st_mode):
+        return target_stat.st_size
+    if not stat.S_ISDIR(target_stat.st_mode):
+        return 0
+
+    total_size = 0
+
+    def _walk_error(error: OSError):
+        logging.warning(f"Failed to inspect {getattr(error, 'filename', target)}: {error}")
+
+    for dirpath, dirnames, filenames in os.walk(target, topdown=True, followlinks=False, onerror=_walk_error):
+        dirnames[:] = [
+            d for d in dirnames
+            if not os.path.islink(os.path.join(dirpath, d))
+        ]
+        for name in filenames:
+            file_path = Path(dirpath) / name
+            try:
+                file_stat = file_path.lstat()
+                if stat.S_ISREG(file_stat.st_mode):
+                    total_size += file_stat.st_size
+            except (PermissionError, OSError) as e:
+                logging.warning(f"Failed to inspect file {file_path}: {e}")
+
+    return total_size
+
+
 def move_to_trash(path: str, dry_run: bool = False) -> dict:
     """Safely move a file or directory to Trash instead of deleting.
 
@@ -36,26 +68,41 @@ def move_to_trash(path: str, dry_run: bool = False) -> dict:
         dict with 'success', 'message', 'bytes_freed' (estimated)
     """
     target = Path(path).expanduser()
-
-    if not target.exists():
+    try:
+        target_stat = target.lstat()
+    except FileNotFoundError:
         return {
             'success': False,
             'message': f'Path does not exist: {path}',
             'bytes_freed': 0,
+            'bytes_freed_human': format_size(0),
+            'dry_run': dry_run,
+        }
+    except (PermissionError, OSError) as e:
+        logging.warning(f"Failed to inspect target {target}: {e}")
+        return {
+            'success': False,
+            'message': f'Failed to inspect path: {e}',
+            'bytes_freed': 0,
+            'bytes_freed_human': format_size(0),
             'dry_run': dry_run,
         }
 
-    # Capture file-vs-directory and size before moving.
-    is_file = target.is_file()
+    if stat.S_ISLNK(target_stat.st_mode):
+        return {
+            'success': False,
+            'message': f'Refusing to trash symlink: {path}',
+            'bytes_freed': 0,
+            'bytes_freed_human': format_size(0),
+            'dry_run': dry_run,
+        }
 
-    # Calculate size before moving
     try:
-        if is_file:
-            size = target.stat().st_size
-        else:
-            size = sum(f.stat().st_size for f in target.rglob('*') if f.is_file())
-    except (PermissionError, OSError):
+        size = _estimate_path_size(target, target_stat)
+    except Exception as e:
+        logging.warning(f"Failed to calculate size for {target}: {e}")
         size = 0
+    is_file = stat.S_ISREG(target_stat.st_mode)
 
     if dry_run:
         return {
@@ -67,17 +114,26 @@ def move_to_trash(path: str, dry_run: bool = False) -> dict:
         }
 
     try:
-        if send2trash is None:
-            return _fallback_trash(target, size, is_file)
-
-        # Symlinks are intentionally not trashed to avoid link-target surprises.
-        if target.is_symlink():
+        try:
+            if stat.S_ISLNK(target.lstat().st_mode):
+                return {
+                    'success': False,
+                    'message': f'Refusing to trash symlink: {path}',
+                    'bytes_freed': 0,
+                    'bytes_freed_human': format_size(0),
+                    'dry_run': False,
+                }
+        except FileNotFoundError:
             return {
                 'success': False,
-                'message': f'Refusing to trash symlink: {path}',
+                'message': f'Path does not exist: {path}',
                 'bytes_freed': 0,
+                'bytes_freed_human': format_size(0),
                 'dry_run': False,
             }
+
+        if send2trash is None:
+            return _fallback_trash(target, size, is_file)
 
         send2trash.send2trash(str(target))
         _record_removal(target.name, 'file' if is_file else 'directory', size)
@@ -90,10 +146,12 @@ def move_to_trash(path: str, dry_run: bool = False) -> dict:
             'recoverable': True,
         }
     except Exception as e:
+        logging.warning(f"Failed to move {target} to Trash: {e}")
         return {
             'success': False,
             'message': f'Failed to trash: {e}',
             'bytes_freed': 0,
+            'bytes_freed_human': format_size(0),
             'dry_run': False,
         }
 
@@ -106,14 +164,25 @@ def _fallback_trash(target: Path, size: int, is_file: bool) -> dict:
     trash_path = trash_dir / trash_name
 
     try:
-        if target.is_symlink():
+        try:
+            if stat.S_ISLNK(target.lstat().st_mode):
+                return {
+                    'success': False,
+                    'message': f'Refusing to trash symlink: {target}',
+                    'bytes_freed': 0,
+                    'bytes_freed_human': format_size(0),
+                    'dry_run': False,
+                }
+        except FileNotFoundError:
             return {
                 'success': False,
-                'message': f'Refusing to trash symlink: {target}',
+                'message': f'Path does not exist: {target}',
                 'bytes_freed': 0,
+                'bytes_freed_human': format_size(0),
                 'dry_run': False,
             }
 
+        trash_dir.mkdir(parents=True, exist_ok=True)
         shutil.move(str(target), str(trash_path))
         # Record the decision for learning
         _record_removal(target.name, 'file' if is_file else 'directory', size)
@@ -127,10 +196,12 @@ def _fallback_trash(target: Path, size: int, is_file: bool) -> dict:
             'trash_path': str(trash_path),
         }
     except Exception as e:
+        logging.warning(f"Fallback trash move failed for {target}: {e}")
         return {
             'success': False,
             'message': f'Failed to move to Trash: {e}',
             'bytes_freed': 0,
+            'bytes_freed_human': format_size(0),
             'dry_run': False,
         }
 
@@ -244,44 +315,145 @@ def trash_app(app_name: str, dry_run: bool = False) -> dict:
     return result
 
 
-def safe_cleanup(command: str, description: str, dry_run: bool = False) -> dict:
+def safe_cleanup(command: str, description: str, category: str = 'manual', dry_run: bool = False) -> dict:
     """Convert dangerous rm commands to safe Trash operations when possible.
 
     Args:
         command: The cleanup command (may be rm -rf or other)
         description: Human-readable description
+        category: Cleanup category for stats tracking
         dry_run: If True, only show what would be done
 
     Returns:
         dict with cleanup results
     """
-    # Parse common rm -rf patterns and convert to safe operations
-    import re
+    from .stats import record_cleanup, run_cleanup
 
-    # Pattern: rm -rf ~/path/* or rm -rf /path/*
-    match = re.match(r'^rm\s+-rf?\s+([~\w/\\\s.-]+)/\*\s*$', command)
-    if match:
-        path = match.group(1).strip()
-        return trash_contents(path, dry_run=dry_run)
-
-    # Pattern: rm -rf ~/path or rm -rf /path (whole directory)
-    match = re.match(r'^rm\s+-rf?\s+([~\w/\\\s.-]+)\s*$', command)
-    if match:
-        path = match.group(1).strip()
-        return move_to_trash(path, dry_run=dry_run)
-
-    # For non-rm commands (npm cache clean, docker prune, etc.),
-    # we can't safely intercept - just report what would happen
-    if dry_run:
+    try:
+        tokens = shlex.split(command)
+    except ValueError as e:
+        logging.warning(f"Failed to parse cleanup command '{command}': {e}")
         return {
-            'success': True,
-            'message': f'[DRY RUN] Would run: {command}',
+            'success': False,
             'bytes_freed': 0,
-            'dry_run': True,
-            'recoverable': False,
-            'note': 'This command cannot be converted to a Trash operation',
+            'bytes_freed_human': format_size(0),
+            'error': str(e),
+            'command': command,
+            'recorded': False,
         }
 
-    # For actual execution of non-rm commands, use the original run_cleanup
-    from .stats import run_cleanup
-    return run_cleanup(command, description)
+    if not tokens:
+        return {
+            'success': False,
+            'bytes_freed': 0,
+            'bytes_freed_human': format_size(0),
+            'error': 'Empty command',
+            'command': command,
+            'recorded': False,
+        }
+
+    if tokens[0] != 'rm':
+        if dry_run:
+            return {
+                'success': True,
+                'message': f'[DRY RUN] Would run: {command}',
+                'bytes_freed': 0,
+                'bytes_freed_human': format_size(0),
+                'dry_run': True,
+                'recoverable': False,
+                'note': 'This command cannot be converted to a Trash operation',
+                'error': None,
+                'command': command,
+                'recorded': False,
+            }
+        return run_cleanup(command, description, category)
+
+    targets: list[str] = []
+    force_mode = False
+    parsing_options = True
+    for token in tokens[1:]:
+        if parsing_options and token == '--':
+            parsing_options = False
+            continue
+        if parsing_options and token.startswith('-'):
+            option_flags = token.lstrip('-')
+            if 'f' in option_flags:
+                force_mode = True
+            continue
+        targets.append(token)
+
+    if not targets:
+        return {
+            'success': False,
+            'bytes_freed': 0,
+            'bytes_freed_human': format_size(0),
+            'error': 'No rm targets provided',
+            'command': command,
+            'recorded': False,
+        }
+
+    total_size = 0
+    recoverable = True
+    had_errors = False
+    error_messages: list[str] = []
+
+    def _is_missing_path_message(message: str | None) -> bool:
+        if not message:
+            return False
+        return (
+            message.startswith('Path does not exist:')
+            or message.startswith('Directory does not exist:')
+        )
+
+    def _expand_target(token: str) -> list[str]:
+        expanded = str(Path(token).expanduser()) if token.startswith('~') else token
+        if any(ch in expanded for ch in ['*', '?', '[']):
+            import glob
+            return glob.glob(expanded)
+        return [expanded]
+
+    for token in targets:
+        expanded_token = str(Path(token).expanduser()) if token.startswith('~') else token
+
+        if expanded_token.endswith('/*') and not any(ch in expanded_token[:-2] for ch in ['*', '?', '[']):
+            dir_path = expanded_token[:-2]
+            result = trash_contents(dir_path, dry_run=dry_run)
+            total_size += result.get('bytes_freed', 0)
+            if not result.get('success', False):
+                if force_mode and _is_missing_path_message(result.get('message')):
+                    continue
+                had_errors = True
+                if result.get('message'):
+                    error_messages.append(result['message'])
+                if result.get('errors'):
+                    error_messages.extend(result['errors'])
+            continue
+
+        expanded_targets = _expand_target(token)
+        for resolved in expanded_targets:
+            result = move_to_trash(resolved, dry_run=dry_run)
+            total_size += result.get('bytes_freed', 0)
+            if not result.get('success', False):
+                if force_mode and _is_missing_path_message(result.get('message')):
+                    continue
+                had_errors = True
+                if result.get('message'):
+                    error_messages.append(result['message'])
+
+        if any(ch in expanded_token for ch in ['*', '?', '[']) and not expanded_targets:
+            logging.warning(f"Cleanup glob had no matches: {expanded_token}")
+
+    success = not had_errors
+    if not dry_run and success and total_size > 0:
+        record_cleanup(description, total_size, category)
+
+    return {
+        'success': success,
+        'bytes_freed': total_size,
+        'bytes_freed_human': format_size(total_size),
+        'error': None if success else '; '.join(error_messages) if error_messages else 'Cleanup failed',
+        'command': command,
+        'recorded': (not dry_run and success and total_size > 0),
+        'dry_run': dry_run,
+        'recoverable': recoverable,
+    }

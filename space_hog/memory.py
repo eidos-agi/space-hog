@@ -302,18 +302,17 @@ def remove_login_item(app_name: str) -> dict:
 
     Returns dict with success status.
     """
-    sanitized_name = re.sub(r'[^a-zA-Z0-9 ._-]', '', app_name).strip()
-    if not sanitized_name:
+    if not re.fullmatch(r"^[a-zA-Z0-9 ._-]+$", app_name):
         return {'success': False, 'error': 'Invalid app name'}
 
     try:
         result = subprocess.run(
             ['osascript', '-e',
-             f'tell application "System Events" to delete login item "{sanitized_name}"'],
+             f'tell application "System Events" to delete login item "{app_name}"'],
             capture_output=True, text=True, timeout=10
         )
         if result.returncode == 0:
-            return {'success': True, 'message': f'Removed {sanitized_name} from login items'}
+            return {'success': True, 'message': f'Removed {app_name} from login items'}
         else:
             return {'success': False, 'error': result.stderr}
     except subprocess.TimeoutExpired:

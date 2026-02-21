@@ -140,7 +140,8 @@ def print_full_report():
 def run_tier_cleanup(tier: int = 1, dry_run: bool = False):
     """Run cleanup for a specific tier."""
     from .advisor import collect_cleanup_opportunities, calculate_tier_savings
-    from .stats import run_cleanup, start_cleanup_session, end_cleanup_session, print_post_cleanup_summary
+    from .safe_delete import safe_cleanup
+    from .stats import start_cleanup_session, end_cleanup_session, print_post_cleanup_summary
 
     print_header(f"TIER {tier} CLEANUP" + (" (DRY RUN)" if dry_run else ""))
 
@@ -181,10 +182,10 @@ def run_tier_cleanup(tier: int = 1, dry_run: bool = False):
 
     for item in tier_info['items']:
         print(f"  Cleaning {item['name']}...", end=' ', flush=True)
-        result = run_cleanup(
+        result = safe_cleanup(
             command=item['command'],
             description=item['name'],
-            category=item.get('category_key', 'manual')
+            category=item.get('category_key', 'manual'),
         )
         if result['success']:
             print(f"{c.GREEN}OK{c.RESET} ({result['bytes_freed_human']})")
