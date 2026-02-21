@@ -1,6 +1,9 @@
 """Tests for space_hog.docker module."""
 
-from space_hog.docker import _parse_size
+import json
+import subprocess
+
+from space_hog.docker import _parse_size, _sanitize_label_text, analyze_docker_volumes, print_docker_analysis
 
 
 class TestParseSize:
@@ -42,3 +45,72 @@ class TestParseSize:
 
     def test_plain_number(self):
         assert _parse_size("12345") == 12345
+
+
+class TestDockerLabelSafety:
+    """Tests for Docker label sanitization and command quoting."""
+
+    def test_sanitize_label_text_uses_strict_allowlist(self):
+        assert _sanitize_label_text("safe.project-1") == "safe.project-1"
+        assert _sanitize_label_text("proj\x00name\x1f") is None
+        assert _sanitize_label_text("my project;$(rm -rf /)|x") is None
+        assert _sanitize_label_text("\n\t ;()$|") is None
+
+    def test_analyze_docker_volumes_sanitizes_project(self, monkeypatch):
+        payload = {
+            "Volumes": [
+                {
+                    "Name": "vol1",
+                    "Labels": "com.docker.compose.project=proj\x00evil",
+                    "Size": "1KB",
+                    "Links": "0",
+                    "Driver": "local",
+                }
+            ]
+        }
+
+        def fake_run(*args, **kwargs):
+            return subprocess.CompletedProcess(args[0], 0, stdout=json.dumps(payload), stderr="")
+
+        monkeypatch.setattr("space_hog.docker.subprocess.run", fake_run)
+        volumes = analyze_docker_volumes()
+
+        assert len(volumes) == 1
+        assert volumes[0]["project"] is None
+
+    def test_print_docker_analysis_quotes_project_name(self, monkeypatch, capsys):
+        monkeypatch.setattr(
+            "space_hog.docker.analyze_docker",
+            lambda: {
+                "installed": True,
+                "running": True,
+                "vm_disk_path": None,
+                "vm_disk_allocated": 0,
+                "vm_disk_used": 0,
+                "vm_disk_bloat": 0,
+                "images": {"count": 0, "size": 0, "reclaimable": 0},
+                "containers": {"count": 0, "size": 0, "reclaimable": 0},
+                "volumes": {"count": 1, "size": 1024, "reclaimable": 1024},
+                "build_cache": {"size": 0, "reclaimable": 0},
+                "total_usage": 1024,
+                "total_reclaimable": 1024,
+            },
+        )
+        monkeypatch.setattr(
+            "space_hog.docker.analyze_docker_volumes",
+            lambda: [
+                {
+                    "name": "vol1",
+                    "project": "myproject",
+                    "size": 1024,
+                    "size_human": "1.0 KB",
+                    "links": 0,
+                    "in_use": False,
+                    "driver": "local",
+                }
+            ],
+        )
+
+        print_docker_analysis()
+        out = capsys.readouterr().out
+        assert "label=com.docker.compose.project=myproject" in out

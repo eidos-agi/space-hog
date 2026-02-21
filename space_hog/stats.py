@@ -4,6 +4,7 @@ Tracks disk space before/after cleanups and maintains history.
 """
 
 import json
+import shlex
 import shutil
 import subprocess
 from datetime import datetime
@@ -72,7 +73,7 @@ def record_cleanup(description: str, bytes_freed: int, category: str = 'manual')
     return cleanup_record
 
 
-def run_cleanup(command: str, description: str, category: str = 'manual') -> dict:
+def run_cleanup(command: str | list[str], description: str, category: str = 'manual') -> dict:
     """Run a cleanup command and measure actual space freed.
 
     This is the CORRECT way to run cleanups - it measures before/after
@@ -86,23 +87,36 @@ def run_cleanup(command: str, description: str, category: str = 'manual') -> dic
     # Measure before
     free_before = shutil.disk_usage("/").free
 
+    # Run the command without a shell to avoid command injection.
+    command_list = shlex.split(command) if isinstance(command, str) else list(command)
+    if not command_list:
+        return {
+            'success': False,
+            'bytes_freed': 0,
+            'bytes_freed_human': '0 B',
+            'error': 'Empty command',
+            'command': command,
+        }
+
+    command_display = command if isinstance(command, str) else ' '.join(command_list)
+
     # Run the command
     try:
         result = subprocess.run(
-            command,
-            shell=True,
+            command_list,
+            shell=False,
             capture_output=True,
             text=True,
             timeout=300  # 5 minute timeout
         )
-        success = result.returncode == 0 or 'no matches found' in result.stderr
+        success = result.returncode == 0 or 'no matches found' in (result.stderr or '')
     except subprocess.TimeoutExpired:
         return {
             'success': False,
             'bytes_freed': 0,
             'bytes_freed_human': '0 B',
             'error': 'Command timed out',
-            'command': command,
+            'command': command_display,
         }
     except Exception as e:
         return {
@@ -110,7 +124,7 @@ def run_cleanup(command: str, description: str, category: str = 'manual') -> dic
             'bytes_freed': 0,
             'bytes_freed_human': '0 B',
             'error': str(e),
-            'command': command,
+            'command': command_display,
         }
 
     # Measure after
@@ -126,7 +140,7 @@ def run_cleanup(command: str, description: str, category: str = 'manual') -> dic
         'bytes_freed': max(0, bytes_freed),
         'bytes_freed_human': format_size(max(0, bytes_freed)),
         'error': None if success else result.stderr,
-        'command': command,
+        'command': command_display,
         'recorded': bytes_freed > 0,
     }
 

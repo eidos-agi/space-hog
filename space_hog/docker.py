@@ -1,10 +1,22 @@
 """Docker disk analysis for Space Hog."""
 
 import json
+import logging
+import re
+import shlex
 import subprocess
 from pathlib import Path
 
 from .utils import format_size, Colors
+
+
+def _sanitize_label_text(text: str | None) -> str | None:
+    """Allow only safe label characters for output and shell use."""
+    if not text:
+        return None
+    if re.fullmatch(r'^[a-zA-Z0-9_.-]+$', text):
+        return text
+    return None
 
 
 def analyze_docker() -> dict:
@@ -103,8 +115,8 @@ def analyze_docker() -> dict:
             except json.JSONDecodeError:
                 continue
 
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
-        pass
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
+        logging.warning(f"Failed to inspect Docker disk usage: {e}")
 
     # Calculate totals
     result['total_usage'] = (
@@ -181,13 +193,14 @@ def analyze_docker_volumes() -> list[dict]:
             if 'com.supabase.cli.project=' in labels:
                 for part in labels.split(','):
                     if 'com.supabase.cli.project=' in part:
-                        project = part.split('=')[1]
+                        project = part.split('=', 1)[1]
                         break
             elif 'com.docker.compose.project=' in labels:
                 for part in labels.split(','):
                     if 'com.docker.compose.project=' in part:
-                        project = part.split('=')[1]
+                        project = part.split('=', 1)[1]
                         break
+            project = _sanitize_label_text(project)
 
             # Parse size
             size_str = vol.get('Size', '0B')
@@ -204,8 +217,8 @@ def analyze_docker_volumes() -> list[dict]:
                 'driver': vol.get('Driver', 'local'),
             })
 
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, json.JSONDecodeError):
-        pass
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, json.JSONDecodeError) as e:
+        logging.warning(f"Failed to inspect Docker volumes: {e}")
 
     return sorted(volumes, key=lambda x: -x['size'])
 
@@ -333,7 +346,10 @@ def print_docker_analysis():
             orphan_size = sum(v['size'] for v in orphaned)
             print(f"  {c.YELLOW}Orphaned volumes (no running containers): {format_size(orphan_size)}{c.RESET}")
             print(f"  To remove orphaned volumes for a project:")
-            print(f"    docker volume rm $(docker volume ls -q -f 'label=com.docker.compose.project=PROJECT_NAME')")
+            orphan_projects = sorted({v.get('project') for v in orphaned if v.get('project')})
+            for proj in orphan_projects:
+                quoted_project = shlex.quote(proj)
+                print(f"    docker volume rm $(docker volume ls -q -f label=com.docker.compose.project={quoted_project})")
             print()
 
     # JSON output for AI
