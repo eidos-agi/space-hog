@@ -1,6 +1,7 @@
 """Docker disk analysis for Space Hog."""
 
 import json
+import logging
 import re
 import shlex
 import subprocess
@@ -10,10 +11,10 @@ from .utils import format_size, Colors
 
 
 def _sanitize_label_text(text: str | None) -> str | None:
-    """Strip control characters from label values used in terminal output."""
+    """Allow only safe label characters for output and shell use."""
     if not text:
         return None
-    cleaned = re.sub(r'[\x00-\x1f\x7f]', '', text).strip()
+    cleaned = re.sub(r'[^a-zA-Z0-9_.-]', '', text).strip()
     return cleaned or None
 
 
@@ -113,8 +114,8 @@ def analyze_docker() -> dict:
             except json.JSONDecodeError:
                 continue
 
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
-        pass
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
+        logging.warning(f"Failed to inspect Docker disk usage: {e}")
 
     # Calculate totals
     result['total_usage'] = (
@@ -215,8 +216,8 @@ def analyze_docker_volumes() -> list[dict]:
                 'driver': vol.get('Driver', 'local'),
             })
 
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, json.JSONDecodeError):
-        pass
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, json.JSONDecodeError) as e:
+        logging.warning(f"Failed to inspect Docker volumes: {e}")
 
     return sorted(volumes, key=lambda x: -x['size'])
 

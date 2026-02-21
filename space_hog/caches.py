@@ -1,5 +1,6 @@
 """Cache analysis for Space Hog."""
 
+import logging
 import time
 from pathlib import Path
 
@@ -18,8 +19,8 @@ def check_caches() -> list[tuple[Path, int, str]]:
                 size = get_dir_size(path)
                 if size > 0:
                     results.append((path, size, description))
-            except (PermissionError, OSError):
-                pass
+            except (PermissionError, OSError) as e:
+                logging.warning(f"Failed to inspect cache location {path}: {e}")
 
     return sorted(results, key=lambda x: x[1], reverse=True)
 
@@ -50,9 +51,9 @@ def get_downloads_analysis(min_age_days: int = 30) -> tuple[int, list[FileInfo]]
                     if stat.st_mtime < cutoff:
                         old_files.append(FileInfo(entry, stat.st_size))
                         total_size += stat.st_size
-                except (PermissionError, OSError):
-                    pass
-    except (PermissionError, OSError):
-        pass
+                except (PermissionError, OSError) as e:
+                    logging.warning(f"Failed to inspect Downloads file {entry}: {e}")
+    except (PermissionError, OSError) as e:
+        logging.warning(f"Failed to read Downloads directory {downloads}: {e}")
 
     return total_size, sorted(old_files, key=lambda x: x.size, reverse=True)

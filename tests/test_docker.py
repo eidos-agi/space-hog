@@ -50,9 +50,10 @@ class TestParseSize:
 class TestDockerLabelSafety:
     """Tests for Docker label sanitization and command quoting."""
 
-    def test_sanitize_label_text_removes_control_characters(self):
+    def test_sanitize_label_text_uses_strict_allowlist(self):
         assert _sanitize_label_text("proj\x00name\x1f") == "projname"
-        assert _sanitize_label_text("\n\t") is None
+        assert _sanitize_label_text("my project;$(rm -rf /)|x") == "myprojectrm-rfx"
+        assert _sanitize_label_text("\n\t ;()$|") is None
 
     def test_analyze_docker_volumes_sanitizes_project(self, monkeypatch):
         payload = {
@@ -99,7 +100,7 @@ class TestDockerLabelSafety:
             lambda: [
                 {
                     "name": "vol1",
-                    "project": "my project",
+                    "project": "myproject",
                     "size": 1024,
                     "size_human": "1.0 KB",
                     "links": 0,
@@ -111,4 +112,4 @@ class TestDockerLabelSafety:
 
         print_docker_analysis()
         out = capsys.readouterr().out
-        assert "label=com.docker.compose.project='my project'" in out
+        assert "label=com.docker.compose.project=myproject" in out

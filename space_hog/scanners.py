@@ -1,6 +1,7 @@
 """File system scanners for Space Hog."""
 
 import hashlib
+import logging
 import os
 from collections import defaultdict
 from pathlib import Path
@@ -20,10 +21,10 @@ def find_large_files(root: Path, min_size_mb: int = 100) -> Generator[FileInfo, 
                     size = entry.stat().st_size
                     if size >= min_size:
                         yield FileInfo(entry, size)
-                except (PermissionError, OSError):
-                    pass
-    except (PermissionError, OSError):
-        pass
+                except (PermissionError, OSError) as e:
+                    logging.warning(f"Failed to inspect file {entry}: {e}")
+    except (PermissionError, OSError) as e:
+        logging.warning(f"Failed to scan for large files in {root}: {e}")
 
 
 def find_space_hogs(root: Path, min_size_mb: int = 50) -> list[tuple[Path, int, str]]:
@@ -32,8 +33,11 @@ def find_space_hogs(root: Path, min_size_mb: int = 50) -> list[tuple[Path, int, 
     min_size = min_size_mb * 1024 * 1024
     pattern_names = set(SPACE_HOG_PATTERNS.keys())
 
+    def _walk_error(error: OSError):
+        logging.warning(f"Skipping inaccessible path {getattr(error, 'filename', root)}: {error}")
+
     try:
-        for dirpath, dirnames, _ in os.walk(root, topdown=True, followlinks=False):
+        for dirpath, dirnames, _ in os.walk(root, topdown=True, followlinks=False, onerror=_walk_error):
             # Prevent traversal into symlinked directories.
             dirnames[:] = [
                 d for d in dirnames
@@ -49,13 +53,10 @@ def find_space_hogs(root: Path, min_size_mb: int = 50) -> list[tuple[Path, int, 
                     size = get_dir_size(current)
                     if size >= min_size:
                         results.append((current, size, SPACE_HOG_PATTERNS[current.name]))
-                except (PermissionError, OSError):
-                    pass
-
-                # Stop descending into matched hog directories.
-                dirnames[:] = []
-    except (PermissionError, OSError):
-        pass
+                except (PermissionError, OSError) as e:
+                    logging.warning(f"Failed to size potential space hog {current}: {e}")
+    except (PermissionError, OSError) as e:
+        logging.warning(f"Failed to walk for space hogs in {root}: {e}")
 
     return sorted(results, key=lambda x: x[1], reverse=True)
 
@@ -73,10 +74,10 @@ def find_duplicates(root: Path, min_size_mb: int = 10) -> dict[str, list[Path]]:
                     size = entry.stat().st_size
                     if size >= min_size:
                         size_groups[size].append(entry)
-                except (PermissionError, OSError):
-                    pass
-    except (PermissionError, OSError):
-        pass
+                except (PermissionError, OSError) as e:
+                    logging.warning(f"Failed to inspect file {entry}: {e}")
+    except (PermissionError, OSError) as e:
+        logging.warning(f"Failed to scan for duplicates in {root}: {e}")
 
     # For groups with same size, compute hash
     duplicates = defaultdict(list)
@@ -88,8 +89,8 @@ def find_duplicates(root: Path, min_size_mb: int = 10) -> dict[str, list[Path]]:
             try:
                 file_hash = hash_file(filepath)
                 duplicates[file_hash].append(filepath)
-            except (PermissionError, OSError):
-                pass
+            except (PermissionError, OSError) as e:
+                logging.warning(f"Failed to hash file {filepath}: {e}")
 
     # Filter to only actual duplicates
     return {h: files for h, files in duplicates.items() if len(files) > 1}

@@ -3,6 +3,8 @@
 Tracks RAM consumers, autostart items, and background processes.
 """
 
+import logging
+import re
 import subprocess
 from pathlib import Path
 from typing import Optional
@@ -65,8 +67,8 @@ def get_login_items() -> list[str]:
         )
         if result.returncode == 0 and result.stdout.strip():
             return [item.strip() for item in result.stdout.strip().split(',')]
-    except (subprocess.TimeoutExpired, Exception):
-        pass
+    except (subprocess.TimeoutExpired, Exception) as e:
+        logging.warning(f"Failed to read login items: {e}")
     return []
 
 
@@ -85,7 +87,8 @@ def get_launch_agents() -> list[dict]:
                     capture_output=True, text=True, timeout=5
                 )
                 is_running = result.returncode == 0
-            except:
+            except Exception as e:
+                logging.warning(f"Failed to inspect launch agent {label}: {e}")
                 is_running = False
 
             agents.append({
@@ -114,7 +117,8 @@ def get_launch_daemons() -> list[dict]:
                     capture_output=True, text=True, timeout=5
                 )
                 is_running = result.returncode == 0
-            except:
+            except Exception as e:
+                logging.warning(f"Failed to inspect launch daemon {label}: {e}")
                 is_running = False
 
             daemons.append({
@@ -298,14 +302,18 @@ def remove_login_item(app_name: str) -> dict:
 
     Returns dict with success status.
     """
+    sanitized_name = re.sub(r'[^a-zA-Z0-9 ._-]', '', app_name).strip()
+    if not sanitized_name:
+        return {'success': False, 'error': 'Invalid app name'}
+
     try:
         result = subprocess.run(
             ['osascript', '-e',
-             f'tell application "System Events" to delete login item "{app_name}"'],
+             f'tell application "System Events" to delete login item "{sanitized_name}"'],
             capture_output=True, text=True, timeout=10
         )
         if result.returncode == 0:
-            return {'success': True, 'message': f'Removed {app_name} from login items'}
+            return {'success': True, 'message': f'Removed {sanitized_name} from login items'}
         else:
             return {'success': False, 'error': result.stderr}
     except subprocess.TimeoutExpired:

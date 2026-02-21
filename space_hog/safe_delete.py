@@ -45,9 +45,12 @@ def move_to_trash(path: str, dry_run: bool = False) -> dict:
             'dry_run': dry_run,
         }
 
+    # Capture file-vs-directory and size before moving.
+    is_file = target.is_file()
+
     # Calculate size before moving
     try:
-        if target.is_file():
+        if is_file:
             size = target.stat().st_size
         else:
             size = sum(f.stat().st_size for f in target.rglob('*') if f.is_file())
@@ -65,10 +68,19 @@ def move_to_trash(path: str, dry_run: bool = False) -> dict:
 
     try:
         if send2trash is None:
-            return _fallback_trash(target, size)
+            return _fallback_trash(target, size, is_file)
+
+        # Symlinks are intentionally not trashed to avoid link-target surprises.
+        if target.is_symlink():
+            return {
+                'success': False,
+                'message': f'Refusing to trash symlink: {path}',
+                'bytes_freed': 0,
+                'dry_run': False,
+            }
 
         send2trash.send2trash(str(target))
-        _record_removal(target.name, 'file' if target.is_file() else 'directory', size)
+        _record_removal(target.name, 'file' if is_file else 'directory', size)
         return {
             'success': True,
             'message': f'Moved to Trash: {path}',
@@ -86,7 +98,7 @@ def move_to_trash(path: str, dry_run: bool = False) -> dict:
         }
 
 
-def _fallback_trash(target: Path, size: int) -> dict:
+def _fallback_trash(target: Path, size: int, is_file: bool) -> dict:
     """Fallback: manually move to ~/.Trash with timestamp to avoid conflicts."""
     trash_dir = Path.home() / '.Trash'
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -94,9 +106,17 @@ def _fallback_trash(target: Path, size: int) -> dict:
     trash_path = trash_dir / trash_name
 
     try:
+        if target.is_symlink():
+            return {
+                'success': False,
+                'message': f'Refusing to trash symlink: {target}',
+                'bytes_freed': 0,
+                'dry_run': False,
+            }
+
         shutil.move(str(target), str(trash_path))
         # Record the decision for learning
-        _record_removal(target.name, 'file' if target.is_file() else 'directory', size)
+        _record_removal(target.name, 'file' if is_file else 'directory', size)
         return {
             'success': True,
             'message': f'Moved to Trash: {target.name} (as {trash_name})',
@@ -218,8 +238,8 @@ def trash_app(app_name: str, dry_run: bool = False) -> dict:
         try:
             from .preferences import record_decision
             record_decision('app', app_name.replace('.app', ''), 'removed', result.get('bytes_freed', 0))
-        except Exception:
-            pass
+        except Exception as e:
+            logging.warning(f"Failed to record app removal decision: {e}")
 
     return result
 

@@ -85,7 +85,7 @@ class TestFindSpaceHogs:
             hog_paths = [h[0] for h in hogs]
             assert symlinked not in hog_paths
 
-    def test_does_not_recurse_into_matched_space_hog_dirs(self):
+    def test_finds_nested_space_hogs_inside_matched_dirs(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
             node_modules = root / "project" / "node_modules"
@@ -96,7 +96,7 @@ class TestFindSpaceHogs:
             hogs = find_space_hogs(root, min_size_mb=0)
             hog_descriptions = [h[2] for h in hogs]
             assert "Node.js dependencies" in hog_descriptions
-            assert "Git repositories" not in hog_descriptions
+            assert "Git repositories" in hog_descriptions
 
 
 class TestHashFile:
