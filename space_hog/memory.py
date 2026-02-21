@@ -302,7 +302,7 @@ def remove_login_item(app_name: str) -> dict:
 
     Returns dict with success status.
     """
-    if not re.fullmatch(r"^[a-zA-Z0-9 ._-]+$", app_name):
+    if not re.fullmatch(r"^[a-zA-Z0-9 ._\-'&]+$", app_name):
         return {'success': False, 'error': 'Invalid app name'}
 
     try:

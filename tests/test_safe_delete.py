@@ -28,12 +28,26 @@ class TestTrashContents:
             assert result["errors"] is not None
             assert any("Skipped symlink" in err for err in result["errors"])
 
+    def test_rejects_symlink_root_directory(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            real_dir = root / "real"
+            real_dir.mkdir()
+            link_root = root / "root-link"
+            link_root.symlink_to(real_dir, target_is_directory=True)
+
+            result = trash_contents(str(link_root), dry_run=True)
+
+            assert result["success"] is False
+            assert "symlink root" in result["message"].lower()
+
 
 class TestMoveToTrash:
     """Tests for move_to_trash function."""
 
     def test_uses_send2trash(self, monkeypatch):
         with tempfile.TemporaryDirectory() as tmpdir:
+            monkeypatch.setattr(safe_delete.Path, "home", lambda: Path(tmpdir))
             target = Path(tmpdir) / "sample.txt"
             target.write_text("data")
             called = {}
@@ -62,6 +76,7 @@ class TestMoveToTrash:
 
     def test_rejects_symlink(self, monkeypatch):
         with tempfile.TemporaryDirectory() as tmpdir:
+            monkeypatch.setattr(safe_delete.Path, "home", lambda: Path(tmpdir))
             root = Path(tmpdir)
             real = root / "real.txt"
             real.write_text("data")
@@ -83,6 +98,16 @@ class TestMoveToTrash:
             assert result["success"] is False
             assert "symlink" in result["message"].lower()
             assert called["send2trash"] is False
+
+    def test_rejects_outside_safe_bases(self):
+        result = move_to_trash("/etc")
+        assert result["success"] is False
+        assert "outside safe locations" in result["message"].lower()
+
+    def test_rejects_root_path(self):
+        result = move_to_trash("/")
+        assert result["success"] is False
+        assert "outside safe locations" in result["message"].lower()
 
 
 class TestSafeCleanup:
@@ -131,3 +156,42 @@ class TestSafeCleanup:
         result = safe_cleanup("docker system prune -a", "Docker", category="docker")
         assert result["success"] is True
         assert calls["args"] == ("docker system prune -a", "Docker", "docker")
+
+    def test_chained_commands_run_all_parts(self, monkeypatch):
+        calls = {"run": [], "move": []}
+
+        def fake_run_cleanup(command, description, category="manual"):
+            calls["run"].append((command, description, category))
+            return {
+                "success": True,
+                "bytes_freed": 20,
+                "bytes_freed_human": "20.0 B",
+                "error": None,
+                "command": command,
+                "recorded": False,
+                "recoverable": False,
+            }
+
+        def fake_move_to_trash(path, dry_run=False):
+            calls["move"].append((path, dry_run))
+            return {
+                "success": True,
+                "message": "ok",
+                "bytes_freed": 10,
+                "bytes_freed_human": "10.0 B",
+                "dry_run": dry_run,
+            }
+
+        monkeypatch.setattr("space_hog.stats.run_cleanup", fake_run_cleanup)
+        monkeypatch.setattr(safe_delete, "move_to_trash", fake_move_to_trash)
+
+        result = safe_cleanup(
+            "npm cache clean --force && rm -rf ~/.npm/_npx/*",
+            "NPM cache",
+            category="cache",
+        )
+
+        assert result["success"] is True
+        assert result["bytes_freed"] == 30
+        assert calls["run"] == [("npm cache clean --force", "NPM cache", "cache")]
+        assert calls["move"] == [(str(Path("~/.npm/_npx/*").expanduser()), False)]

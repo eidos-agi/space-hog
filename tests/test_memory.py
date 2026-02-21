@@ -32,3 +32,17 @@ def test_remove_login_item_accepts_valid_name(monkeypatch):
 
     assert result["success"] is True
     assert calls["args"][0][2].endswith('login item "Safe_App 123"')
+
+
+def test_remove_login_item_accepts_apostrophe_and_ampersand(monkeypatch):
+    calls = {}
+
+    def fake_run(*args, **kwargs):
+        calls["args"] = args
+        return subprocess.CompletedProcess(args[0], 0, stdout="", stderr="")
+
+    monkeypatch.setattr("space_hog.memory.subprocess.run", fake_run)
+    result = remove_login_item("Bob's App & Co")
+
+    assert result["success"] is True
+    assert calls["args"][0][2].endswith('login item "Bob\'s App & Co"')

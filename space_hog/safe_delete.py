@@ -57,6 +57,32 @@ def _estimate_path_size(target: Path, target_stat: os.stat_result) -> int:
     return total_size
 
 
+def _is_allowed_trash_target(target: Path) -> bool:
+    """Validate target is within approved safe base paths."""
+    if target == Path('/'):
+        return False
+
+    try:
+        resolved_target = target.resolve(strict=True)
+    except (PermissionError, OSError):
+        return False
+
+    safe_bases = (
+        Path.home().resolve(),
+        Path('/Applications'),
+        Path('/Library/Caches'),
+    )
+
+    for base in safe_bases:
+        try:
+            resolved_target.relative_to(base.resolve(strict=False))
+            return True
+        except ValueError:
+            continue
+
+    return False
+
+
 def move_to_trash(path: str, dry_run: bool = False) -> dict:
     """Safely move a file or directory to Trash instead of deleting.
 
@@ -92,6 +118,15 @@ def move_to_trash(path: str, dry_run: bool = False) -> dict:
         return {
             'success': False,
             'message': f'Refusing to trash symlink: {path}',
+            'bytes_freed': 0,
+            'bytes_freed_human': format_size(0),
+            'dry_run': dry_run,
+        }
+
+    if not _is_allowed_trash_target(target):
+        return {
+            'success': False,
+            'message': f'Refusing to trash path outside safe locations: {path}',
             'bytes_freed': 0,
             'bytes_freed_human': format_size(0),
             'dry_run': dry_run,
@@ -217,6 +252,15 @@ def trash_contents(directory: str, dry_run: bool = False) -> dict:
     """
     target = Path(directory).expanduser()
 
+    if target.is_symlink():
+        return {
+            'success': False,
+            'message': f'Refusing to trash contents of symlink root: {directory}',
+            'bytes_freed': 0,
+            'items_trashed': 0,
+            'dry_run': dry_run,
+        }
+
     if not target.exists():
         return {
             'success': False,
@@ -315,18 +359,8 @@ def trash_app(app_name: str, dry_run: bool = False) -> dict:
     return result
 
 
-def safe_cleanup(command: str, description: str, category: str = 'manual', dry_run: bool = False) -> dict:
-    """Convert dangerous rm commands to safe Trash operations when possible.
-
-    Args:
-        command: The cleanup command (may be rm -rf or other)
-        description: Human-readable description
-        category: Cleanup category for stats tracking
-        dry_run: If True, only show what would be done
-
-    Returns:
-        dict with cleanup results
-    """
+def _safe_cleanup_single(command: str, description: str, category: str = 'manual', dry_run: bool = False) -> dict:
+    """Run safe cleanup for a single command without shell chaining."""
     from .stats import record_cleanup, run_cleanup
 
     try:
@@ -454,6 +488,62 @@ def safe_cleanup(command: str, description: str, category: str = 'manual', dry_r
         'error': None if success else '; '.join(error_messages) if error_messages else 'Cleanup failed',
         'command': command,
         'recorded': (not dry_run and success and total_size > 0),
+        'dry_run': dry_run,
+        'recoverable': recoverable,
+    }
+
+
+def safe_cleanup(command: str, description: str, category: str = 'manual', dry_run: bool = False) -> dict:
+    """Convert dangerous rm commands to safe Trash operations when possible.
+
+    Args:
+        command: The cleanup command (may be rm -rf or other)
+        description: Human-readable description
+        category: Cleanup category for stats tracking
+        dry_run: If True, only show what would be done
+
+    Returns:
+        dict with cleanup results
+    """
+    sub_commands = [part.strip() for part in command.split('&&') if part.strip()]
+    if not sub_commands:
+        return {
+            'success': False,
+            'bytes_freed': 0,
+            'bytes_freed_human': format_size(0),
+            'error': 'Empty command',
+            'command': command,
+            'recorded': False,
+            'dry_run': dry_run,
+            'recoverable': False,
+        }
+
+    if len(sub_commands) == 1:
+        return _safe_cleanup_single(sub_commands[0], description, category, dry_run=dry_run)
+
+    total_size = 0
+    had_errors = False
+    error_messages: list[str] = []
+    recorded = False
+    recoverable = True
+
+    for sub_command in sub_commands:
+        result = _safe_cleanup_single(sub_command, description, category, dry_run=dry_run)
+        total_size += result.get('bytes_freed', 0)
+        recorded = recorded or result.get('recorded', False)
+        recoverable = recoverable and result.get('recoverable', False)
+
+        if not result.get('success', False):
+            had_errors = True
+            error_messages.append(f"{sub_command}: {result.get('error') or 'Cleanup failed'}")
+
+    return {
+        'success': not had_errors,
+        'bytes_freed': total_size,
+        'bytes_freed_human': format_size(total_size),
+        'error': None if not had_errors else '; '.join(error_messages),
+        'command': command,
+        'recorded': recorded,
         'dry_run': dry_run,
         'recoverable': recoverable,
     }
