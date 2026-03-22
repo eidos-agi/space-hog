@@ -13,7 +13,6 @@ Each signal contributes to a confidence score: HIGH, MEDIUM, or LOW.
 import json
 import subprocess
 from collections import Counter
-from datetime import datetime
 from pathlib import Path
 
 from .utils import format_size, get_dir_size, Colors
@@ -59,6 +58,20 @@ CORE_TOOLS = {
     "python@3.10", "python@3.13", "node", "openssl", "ca-certificates",
     "cmake", "pkg-config", "readline", "sqlite", "xz", "zlib",
     "libffi", "gettext", "pcre2", "libyaml",
+}
+
+# Profile tags → brew formulas that tag implies are in active use
+# If you're tagged "rust-dev", rust/cargo aren't unused — even if not in shell history
+TAG_PROTECTED_TOOLS = {
+    "python-dev": {"python@3.10", "python@3.11", "python@3.12", "python@3.13", "pyenv", "pipx"},
+    "js-dev": {"node", "yarn", "pnpm", "bun", "deno", "typescript"},
+    "rust-dev": {"rust", "rustup"},
+    "go-dev": {"go", "gopls"},
+    "ios-dev": {"cocoapods", "swiftlint", "swiftformat", "fastlane"},
+    "docker-user": {"docker", "docker-machine", "docker-compose", "docker-buildx", "colima"},
+    "infra-ops": {"terraform", "awscli", "kubectl", "kubernetes-cli", "helm", "pulumi"},
+    "paas-user": {"railway", "supabase", "flyctl"},
+    "ai-agent-user": {"ollama"},  # local LLM tools are expected for AI agent users
 }
 
 # Formula names that differ from the commands they provide
@@ -189,24 +202,42 @@ def _get_running_processes() -> set:
         return set()
 
 
+def _get_profile_protected_tools() -> set[str]:
+    """Get brew formulas protected by the user's profile tags."""
+    from .profile import get_tags
+    tags = get_tags()
+    protected = set()
+    for tag, tools in TAG_PROTECTED_TOOLS.items():
+        if tag in tags:
+            protected.update(tools)
+    return protected
+
+
 def detect_unused_software(min_days: int = 90) -> dict:
     """Detect unused software using layered signal analysis.
+
+    Loads the shared Eidos Mac profile to avoid flagging tools
+    that match the user's developer profile (e.g. rust for a rust-dev).
 
     Returns structured data for agent consumption:
     {
         "unused_apps": [...],
         "unused_brew": [...],
         "brew_orphans": [...],
+        "profile_used": bool,
         "summary": { "total_reclaimable": int, "item_count": int }
     }
     """
     history = _get_shell_history_commands()
     running = _get_running_processes()
+    profile_protected = _get_profile_protected_tools()
 
     results = {
         "unused_apps": [],
         "unused_brew": [],
         "brew_orphans": [],
+        "profile_used": len(profile_protected) > 0,
+        "profile_protected_count": len(profile_protected),
         "summary": {"total_reclaimable": 0, "item_count": 0},
     }
 
@@ -269,6 +300,8 @@ def detect_unused_software(min_days: int = 90) -> dict:
         name = pkg["name"]
         if name in CORE_TOOLS:
             continue  # never flag core infrastructure
+        if name in profile_protected:
+            continue  # matches user's developer profile
 
         # Check all commands this formula provides
         commands = _brew_commands(name)
@@ -309,8 +342,16 @@ def print_unused_report(min_days: int = 90):
     c = Colors
     data = detect_unused_software(min_days=min_days)
 
+    from .profile import get_user_type
+
     print(f"\n  {c.BOLD}UNUSED SOFTWARE DETECTION{c.RESET}")
     print(f"  {'=' * 50}")
+
+    user_type = get_user_type()
+    if data["profile_used"]:
+        print(f"  {DIM}Profile: {user_type} — {data['profile_protected_count']} tools protected by profile{c.RESET}")
+    else:
+        print(f"  {c.YELLOW}No profile found — run `aad profile` first for smarter detection{c.RESET}")
 
     if data["brew_orphans"]:
         print(f"\n  {c.GREEN}BREW ORPHANS (safe to remove){c.RESET}")
