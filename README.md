@@ -10,6 +10,10 @@
 
 A CLI tool that finds and reclaims wasted disk space on macOS.
 
+<p align="center">
+  <img src="https://raw.githubusercontent.com/eidos-agi/space-hog/main/demo/demo.svg" alt="space-hog demo" width="700">
+</p>
+
 ### Built for AI Agents
 
 Space Hog is designed to be run by AI coding assistants like [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Codex CLI](https://github.com/openai/codex), and [Gemini CLI](https://github.com/google-gemini/gemini-cli).
