@@ -2,6 +2,12 @@
 
 # Space Hog
 
+[![PyPI](https://img.shields.io/pypi/v/space-hog)](https://pypi.org/project/space-hog/)
+[![Python 3.10+](https://img.shields.io/pypi/pyversions/space-hog)](https://pypi.org/project/space-hog/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![macOS](https://img.shields.io/badge/platform-macOS-lightgrey)](https://github.com/eidos-agi/space-hog)
+[![Zero Dependencies](https://img.shields.io/badge/dependencies-0-brightgreen)](https://pypi.org/project/space-hog/)
+
 A CLI tool that finds and reclaims wasted disk space on macOS.
 
 ### Built for AI Agents
