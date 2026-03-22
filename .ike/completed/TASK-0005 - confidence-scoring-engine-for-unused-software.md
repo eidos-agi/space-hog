@@ -1,7 +1,7 @@
 ---
 id: TASK-0005
 title: Confidence scoring engine for unused software
-status: To Do
+status: Done
 created: '2026-03-22'
 priority: high
 milestone: MS-0001
@@ -13,5 +13,8 @@ definition-of-done:
   - Each unused item has a confidence score (HIGH/MEDIUM/LOW)
   - Score based on number of corroborating signals
   - '--unused --json outputs confidence field'
+updated: '2026-03-22'
 ---
 Combine all 5 signals into a confidence score per item. HIGH = multiple signals agree (last used > 180d + not in history + no running process). MEDIUM = one strong signal. LOW = one weak signal. Agent uses confidence to decide what to present to user.
+
+**Completion notes:** Confidence scoring engine: HIGH (multiple signals, never in history + not running), MEDIUM (one signal or low frequency), LOW (running despite other signals). Each item has confidence field in JSON output.

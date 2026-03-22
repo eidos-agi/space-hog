@@ -15,6 +15,7 @@ from .runner import scan_all
 from .smart import get_smart_recommendations
 from .memory import print_memory_analysis
 from .preferences import print_preferences, add_essential_app, add_blacklist_app
+from .unused import print_unused_report
 
 
 def print_full_report():
@@ -354,6 +355,8 @@ Currently scans:
                         help='Mark an app as essential (never suggest removing)')
     parser.add_argument('--blacklist', type=str, metavar='APP',
                         help='Mark an app as removable (always suggest removing)')
+    parser.add_argument('--unused', '-u', action='store_true',
+                        help='Detect unused software (apps, brew packages, orphan deps)')
     parser.add_argument('--full', '-f', action='store_true',
                         help='Full system health report (disk + memory + apps + recommendations)')
 
@@ -400,6 +403,11 @@ Currently scans:
             tier=args.run_tier or 1,
             dry_run=args.dry_run
         )
+        sys.exit(0)
+
+    if args.unused:
+        print("\nSpace Hog - Unused Software Detection")
+        print_unused_report(min_days=args.days_unused)
         sys.exit(0)
 
     if args.memory:
