@@ -285,9 +285,11 @@ def print_docker_analysis():
         print()
 
     if docker['volumes']['reclaimable'] > 50 * 1024 * 1024:
-        print(f"  {c.YELLOW}2. Remove unused volumes (check first!):{c.RESET}")
-        print(f"     docker volume prune")
+        print(f"  {c.YELLOW}2. Remove unused volumes — CAUTION: may contain databases/state:{c.RESET}")
+        print(f"     docker volume ls                    # review first!")
+        print(f"     docker volume prune                 # only after review")
         print(f"     (Reclaims ~{format_size(docker['volumes']['reclaimable'])})")
+        print(f"     {c.YELLOW}⚠ Volumes contain persistent data that does NOT regenerate.{c.RESET}")
         print()
 
     vm_overhead = docker['vm_disk_allocated'] - docker['vm_disk_used']

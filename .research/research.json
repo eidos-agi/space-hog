@@ -1,0 +1,15 @@
+{
+  "id": "5bc89dc5-e931-4959-a124-3b438f128316",
+  "version": "0.1.0",
+  "projectName": "startup-health",
+  "created": "2026-03-22",
+  "phase": "research",
+  "transitions": [
+    {
+      "phase": "research",
+      "date": "2026-03-22"
+    }
+  ],
+  "question": "How can we detect and diagnose macOS startup items (launch agents, login items, background processes) that cause performance problems, and what's the best way to present this to an AI agent for remediation?",
+  "context": "apple-a-day already detects crash-looping launch agents. But there's a broader problem: Macs accumulate startup items over time — launch agents, login items, background daemons — that slow boot, eat RAM, and cause mysterious issues. Users don't know what's running or why.\n\nThis overlaps both apple-a-day (health diagnosis) and space-hog (cleanup). The question is where it lives and how deep to go. macOS signals include: launchctl list, login items via osascript, SMAppService, /Library/LaunchDaemons, ~/Library/LaunchAgents, Activity Monitor equivalents (ps aux sorted by CPU/memory), and the new Background Items in System Settings (macOS 13+).\n\nThe user specifically mentioned 'what's running at the start which causes problems' — this is the boot health / startup audit feature."
+}
