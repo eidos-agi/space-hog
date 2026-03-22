@@ -63,7 +63,7 @@ space-hog --stats
 
 ```bash
 # Clone the repository
-git clone https://github.com/rhea-impact/space-hog.git
+git clone https://github.com/eidos-agi/space-hog.git
 cd space-hog
 
 # Install (editable mode for development)
@@ -174,34 +174,11 @@ space_hog/
 
 MIT
 
-## Fork Workflow
+## Part of the Eidos AGI Mac Toolkit
 
-This repo is a fork of [rhea-impact/space-hog](https://github.com/rhea-impact/space-hog).
+| Tool | What |
+|------|------|
+| [apple-a-day](https://github.com/eidos-agi/apple-a-day) | Mac health diagnostics — crashes, panics, broken services |
+| [space-hog](https://github.com/eidos-agi/space-hog) | Disk space reclamation — this repo |
 
-**Remotes:**
-```
-origin   → dshanklin-bv/space-hog (this fork)
-upstream → rhea-impact/space-hog (public source)
-```
-
-**Sync from upstream:**
-```bash
-git fetch upstream
-git merge upstream/main
-git push origin main
-```
-
-**Push fixes to upstream:**
-```bash
-# Create a branch for your fix
-git checkout -b fix/my-fix
-
-# Make changes, commit
-git add -A && git commit -m "Fix: description"
-
-# Push to your fork
-git push origin fix/my-fix
-
-# Create PR on GitHub: dshanklin-bv/space-hog → rhea-impact/space-hog
-gh pr create --repo rhea-impact/space-hog --head dshanklin-bv:fix/my-fix
-```
+Both are agent-native, zero-dependency, Mac-specific.
